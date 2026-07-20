@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.jt1078.config;
 
+import com.genersoft.iot.vmp.auth.internal.InternalInvocationGuard;
 import com.genersoft.iot.vmp.jt1078.codec.netty.TcpServer;
 import com.genersoft.iot.vmp.jt1078.service.Ijt1078Service;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,8 +30,16 @@ public class JT1078AutoConfiguration {
     @Autowired
     private JT1078Config jt1078Config;
 
+    @Autowired
+    private InternalInvocationGuard internalInvocationGuard;
+
     @Bean(initMethod = "start", destroyMethod = "stop")
     public TcpServer jt1078Server(@Value("${jt1078.port}") Integer port) {
-        return new TcpServer(port, applicationEventPublisher, service, jt1078Config);
+        return new TcpServer(
+                port,
+                applicationEventPublisher,
+                service,
+                jt1078Config,
+                internalInvocationGuard);
     }
 }

@@ -603,11 +603,6 @@ export default {
       olMap.render()
     },
     setFeaturePositionById(layer, featureId, data) {
-      if (layer instanceof LayerGroup) {
-
-      }else {
-
-      }
       let featureOld = layer.getSource().getFeatureById(featureId)
       if (featureOld) {
         layer.getSource().removeFeature(featureOld)

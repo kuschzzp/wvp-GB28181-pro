@@ -1,6 +1,7 @@
 package com.genersoft.iot.vmp.web.gb28181;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.genersoft.iot.vmp.authorization.video.GbChannelAccessAuthorizer;
 import com.genersoft.iot.vmp.common.InviteInfo;
 import com.genersoft.iot.vmp.common.InviteSessionType;
 import com.genersoft.iot.vmp.common.StreamInfo;
@@ -19,6 +20,7 @@ import com.genersoft.iot.vmp.service.bean.InviteErrorCode;
 import io.swagger.v3.oas.annotations.Hidden;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.request.async.DeferredResult;
 
@@ -35,7 +37,14 @@ import java.text.ParseException;
 @RestController
 @RequestMapping(value = "/api/v1/stream")
 @Hidden
+@PreAuthorize("@authz.check('video:channel:play')")
 public class ApiStreamController {
+
+    private static final String CHANNEL_PLAY_PERMISSION = "video:channel:play";
+    private static final String CHANNEL_STOP_PERMISSION = "video:channel:stop";
+
+    @Autowired
+    private GbChannelAccessAuthorizer channelAccessAuthorizer;
 
     @Autowired
     private SIPCommander cmder;
@@ -69,7 +78,7 @@ public class ApiStreamController {
      * @return
      */
     @GetMapping("/start")
-    private DeferredResult<JSONObject> start(String serial ,
+    public DeferredResult<JSONObject> start(String serial ,
                                              @RequestParam(required = false)Integer channel ,
                                              @RequestParam(required = false)String code,
                                              @RequestParam(required = false)String cdn,
@@ -80,6 +89,8 @@ public class ApiStreamController {
                                              @RequestParam(required = false)String timeout
 
     ){
+        channelAccessAuthorizer.requireGbChannel(
+                CHANNEL_PLAY_PERMISSION, serial, code);
         DeferredResult<JSONObject> result = new DeferredResult<>(userSetting.getPlayTimeout().longValue() + 10);
         Device device = deviceService.getDeviceByDeviceId(serial);
         if (device == null ) {
@@ -217,16 +228,17 @@ public class ApiStreamController {
      * @param check_outputs
      * @return
      */
+    @PreAuthorize("@authz.check('video:channel:stop')")
     @GetMapping("/stop")
     @ResponseBody
-    private JSONObject stop(String serial ,
+    public JSONObject stop(String serial ,
                              @RequestParam(required = false)Integer channel ,
                              @RequestParam(required = false)String code,
                              @RequestParam(required = false)String check_outputs
 
     ){
-
-
+        channelAccessAuthorizer.requireGbChannel(
+                CHANNEL_STOP_PERMISSION, serial, code);
         Device device = deviceService.getDeviceByDeviceId(serial);
         if (device == null) {
             JSONObject result = new JSONObject();
@@ -266,13 +278,15 @@ public class ApiStreamController {
      */
     @GetMapping("/touch")
     @ResponseBody
-    private JSONObject touch(String serial ,String t,
+    public JSONObject touch(String serial ,String t,
                             @RequestParam(required = false)Integer channel ,
                             @RequestParam(required = false)String code,
                             @RequestParam(required = false)String autorestart,
                             @RequestParam(required = false)String audio,
                             @RequestParam(required = false)String cdn
     ){
+        channelAccessAuthorizer.requireGbChannel(
+                CHANNEL_PLAY_PERMISSION, serial, code);
         return null;
     }
 }

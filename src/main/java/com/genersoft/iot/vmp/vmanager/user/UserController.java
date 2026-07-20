@@ -1,228 +1,226 @@
 package com.genersoft.iot.vmp.vmanager.user;
 
-import com.genersoft.iot.vmp.conf.UserSetting;
-import com.genersoft.iot.vmp.conf.exception.ControllerException;
+import com.genersoft.iot.vmp.auth.annotation.PublicEndpoint;
+import com.genersoft.iot.vmp.auth.config.AuthorizationProperties;
+import com.genersoft.iot.vmp.auth.department.DepartmentScopeService;
+import com.genersoft.iot.vmp.auth.department.model.DepartmentScope;
+import com.genersoft.iot.vmp.auth.dto.AssignRolesRequest;
+import com.genersoft.iot.vmp.auth.dto.CreateUserRequest;
+import com.genersoft.iot.vmp.auth.dto.LoginResponse;
+import com.genersoft.iot.vmp.auth.dto.UserSummary;
+import com.genersoft.iot.vmp.auth.model.AuthPrincipal;
+import com.genersoft.iot.vmp.auth.service.CurrentPrincipalService;
+import com.genersoft.iot.vmp.auth.service.UserAuthenticationService;
+import com.genersoft.iot.vmp.auth.user.SystemUserService;
+import com.genersoft.iot.vmp.auth.user.dto.ChangeOwnPasswordRequest;
+import com.genersoft.iot.vmp.auth.user.dto.ResetPasswordRequest;
+import com.genersoft.iot.vmp.auth.user.dto.UserQuery;
 import com.genersoft.iot.vmp.conf.security.JwtUtils;
-import com.genersoft.iot.vmp.conf.security.SecurityUtils;
-import com.genersoft.iot.vmp.conf.security.dto.LoginUser;
-import com.genersoft.iot.vmp.service.IRoleService;
 import com.genersoft.iot.vmp.service.IUserService;
-import com.genersoft.iot.vmp.storager.dao.dto.Role;
-import com.genersoft.iot.vmp.storager.dao.dto.User;
-import com.genersoft.iot.vmp.utils.DateUtil;
-import com.genersoft.iot.vmp.vmanager.bean.ErrorCode;
 import com.genersoft.iot.vmp.vmanager.bean.WVPResult;
 import com.github.pagehelper.PageInfo;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.util.DigestUtils;
-import org.springframework.util.ObjectUtils;
-import org.springframework.web.bind.annotation.*;
-
-import javax.security.sasl.AuthenticationException;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import java.time.LocalDateTime;
-import java.util.List;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
-@Tag(name  = "用户管理")
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Set;
+
+@Tag(name = "用户管理")
 @RestController
 @RequestMapping("/api/user")
 public class UserController {
 
-    @Autowired
-    private AuthenticationManager authenticationManager;
+    private final IUserService userService;
+    private final SystemUserService systemUserService;
+    private final DepartmentScopeService departmentScopeService;
+    private final UserAuthenticationService authenticationService;
+    private final CurrentPrincipalService currentPrincipalService;
+    private final AuthorizationProperties authorizationProperties;
 
-    @Autowired
-    private IUserService userService;
+    public UserController(
+            IUserService userService,
+            SystemUserService systemUserService,
+            DepartmentScopeService departmentScopeService,
+            UserAuthenticationService authenticationService,
+            CurrentPrincipalService currentPrincipalService,
+            AuthorizationProperties authorizationProperties) {
+        this.userService = userService;
+        this.systemUserService = systemUserService;
+        this.departmentScopeService = departmentScopeService;
+        this.authenticationService = authenticationService;
+        this.currentPrincipalService = currentPrincipalService;
+        this.authorizationProperties = authorizationProperties;
+    }
 
-    @Autowired
-    private IRoleService roleService;
-
-    @Autowired
-    private UserSetting userSetting;
-
-    @GetMapping("/login")
+    @PublicEndpoint(reason = "旧版登录兼容入口，受配置开关和 Sunset 期限约束")
     @PostMapping("/login")
-    @Operation(summary = "登录", description = "登录成功后返回AccessToken， 可以从返回值获取到也可以从响应头中获取到，" +
-            "后续的请求需要添加请求头 'access-token'或者放在参数里")
-
-    @Parameter(name = "username", description = "用户名", required = true)
-    @Parameter(name = "password", description = "密码（32位md5加密）", required = true)
-    public LoginUser login(HttpServletRequest request, HttpServletResponse response, @RequestParam String username, @RequestParam String password){
-        LoginUser user;
-        try {
-            user = SecurityUtils.login(username, password, authenticationManager);
-        } catch (AuthenticationException e) {
-            throw new ControllerException(ErrorCode.ERROR100.getCode(), e.getMessage());
-        }
-        if (user == null) {
-            throw new ControllerException(ErrorCode.ERROR100.getCode(), "用户名或密码错误");
-        }else {
-            String jwt = JwtUtils.createToken(username);
-            response.setHeader(JwtUtils.getHeader(), jwt);
-            user.setAccessToken(jwt);
-            user.setServerId(userSetting.getServerId());
-        }
-        return user;
+    @Operation(summary = "旧版 MD5 登录（已弃用）")
+    public ResponseEntity<WVPResult<LoginResponse>> legacyLogin(
+            HttpServletRequest request,
+            @RequestParam String username,
+            @RequestParam String password) {
+        LoginResponse response = authenticationService.legacyMd5Login(
+                username, password, request.getRemoteAddr());
+        return ResponseEntity.ok()
+                .header("Deprecation", "true")
+                .header("Sunset", authorizationProperties.legacyMd5LoginSunset())
+                .header(JwtUtils.HEADER, response.accessToken())
+                .body(WVPResult.success(response));
     }
 
-
+    @PreAuthorize("isAuthenticated()")
     @PostMapping("/changePassword")
-    @Operation(summary = "修改密码", security = @SecurityRequirement(name = JwtUtils.HEADER))
-    @Parameter(name = "username", description = "用户名", required = true)
-    @Parameter(name = "oldpassword", description = "旧密码（已md5加密的密码）", required = true)
-    @Parameter(name = "password", description = "新密码（未md5加密的密码）", required = true)
-    public void changePassword(@RequestParam String oldPassword, @RequestParam String password){
-        // 获取当前登录用户id
-        LoginUser userInfo = SecurityUtils.getUserInfo();
-        if (userInfo== null) {
-            throw new ControllerException(ErrorCode.ERROR100);
-        }
-        String username = userInfo.getUsername();
-        LoginUser user = null;
-        try {
-            user = SecurityUtils.login(username, oldPassword, authenticationManager);
-            if (user == null) {
-                throw new ControllerException(ErrorCode.ERROR100);
-            }
-            //int userId = SecurityUtils.getUserId();
-            boolean result = userService.changePassword(user.getId(), DigestUtils.md5DigestAsHex(password.getBytes()));
-            if (!result) {
-                throw new ControllerException(ErrorCode.ERROR100);
-            }
-        } catch (AuthenticationException e) {
-            throw new ControllerException(ErrorCode.ERROR100.getCode(), e.getMessage());
-        }
+    @Operation(summary = "修改本人密码", security = @SecurityRequirement(name = JwtUtils.HEADER))
+    public void changePassword(
+            @RequestParam String oldPassword,
+            @RequestParam @Size(min = 8, max = 128) String password) {
+        systemUserService.changeOwnPassword(new ChangeOwnPasswordRequest(oldPassword, password));
     }
 
+    @PreAuthorize("@authz.require('system:user:add')")
+    @PostMapping
+    @Operation(summary = "新增用户", security = @SecurityRequirement(name = JwtUtils.HEADER))
+    public long create(@Valid @RequestBody CreateUserRequest request) {
+        return systemUserService.create(
+                withDefaultDepartment(request), decisionScope("system:user:add"));
+    }
 
+    @PreAuthorize("@authz.require('system:user:add')")
     @PostMapping("/add")
-    @Operation(summary = "添加用户", security = @SecurityRequirement(name = JwtUtils.HEADER))
-    @Parameter(name = "username", description = "用户名", required = true)
-    @Parameter(name = "password", description = "密码（未md5加密的密码）", required = true)
-    @Parameter(name = "roleId", description = "角色ID", required = true)
-    public void add(@RequestParam String username,
-                                                 @RequestParam String password,
-                                                 @RequestParam Integer roleId){
-        if (ObjectUtils.isEmpty(username) || ObjectUtils.isEmpty(password) || roleId == null) {
-            throw new ControllerException(ErrorCode.ERROR400.getCode(), "参数不可为空");
-        }
-        // 获取当前登录用户id
-        int currenRoleId = SecurityUtils.getUserInfo().getRole().getId();
-        if (currenRoleId != 1) {
-            // 只用角色id为1才可以删除和添加用户
-            throw new ControllerException(ErrorCode.ERROR400.getCode(), "用户无权限");
-        }
-        User user = new User();
-        user.setUsername(username);
-        user.setPassword(DigestUtils.md5DigestAsHex(password.getBytes()));
-        //新增用户的pushKey的生成规则为md5(时间戳+用户名)
-        user.setPushKey(DigestUtils.md5DigestAsHex((System.currentTimeMillis()+password).getBytes()));
-        Role role = roleService.getRoleById(roleId);
-
-        if (role == null) {
-            throw new ControllerException(ErrorCode.ERROR400.getCode(), "角色不存在");
-        }
-        user.setRole(role);
-        user.setCreateTime(DateUtil.getNow());
-        user.setUpdateTime(DateUtil.getNow());
-        int addResult = userService.addUser(user);
-        if (addResult <= 0) {
-            throw new ControllerException(ErrorCode.ERROR100);
-        }
+    @Operation(summary = "新增用户（旧版兼容）", security = @SecurityRequirement(name = JwtUtils.HEADER))
+    public long addLegacy(
+            @RequestParam String username,
+            @RequestParam String password,
+            @RequestParam long roleId) {
+        AuthPrincipal principal = currentPrincipalService.requireCurrent();
+        return systemUserService.create(new CreateUserRequest(
+                        username, password, username, principal.deptId(), Set.of(roleId)),
+                departmentScopeService.resolveDecisionScope(principal, "system:user:add"));
     }
 
+    @PreAuthorize("@authz.require('system:user:remove')")
     @DeleteMapping("/delete")
     @Operation(summary = "删除用户", security = @SecurityRequirement(name = JwtUtils.HEADER))
-    @Parameter(name = "id", description = "用户Id", required = true)
-    public void delete(@RequestParam Integer id){
-        // 获取当前登录用户id
-        int currenRoleId = SecurityUtils.getUserInfo().getRole().getId();
-        if (currenRoleId != 1) {
-            // 只用角色id为0才可以删除和添加用户
-            throw new ControllerException(ErrorCode.ERROR400.getCode(), "用户无权限");
-        }
-        int deleteResult = userService.deleteUser(id);
-        if (deleteResult <= 0) {
-            throw new ControllerException(ErrorCode.ERROR100);
-        }
+    public void delete(@RequestParam long id) {
+        systemUserService.delete(id, decisionScope("system:user:remove"));
     }
 
+    @PreAuthorize("@authz.require('system:user:remove')")
+    @DeleteMapping("/{id}")
+    public void deleteByPath(@PathVariable long id) {
+        systemUserService.delete(id, decisionScope("system:user:remove"));
+    }
+
+    @PreAuthorize("@authz.require('system:user:list')")
     @GetMapping("/all")
-    @Operation(summary = "查询用户", security = @SecurityRequirement(name = JwtUtils.HEADER))
-    public List<User> all(){
-        // 获取当前登录用户id
-        return userService.getAllUsers();
+    @Operation(summary = "查询全部用户", security = @SecurityRequirement(name = JwtUtils.HEADER))
+    public List<UserSummary> all() {
+        DepartmentScope scope = decisionScope("system:user:list");
+        PageInfo<com.genersoft.iot.vmp.auth.user.dto.UserSummary> firstPage =
+                systemUserService.query(new UserQuery(1, 200, null, null, null), scope);
+        List<UserSummary> result = new ArrayList<>();
+        firstPage.getList().stream().map(this::toCompatibilitySummary).forEach(result::add);
+        for (int page = 2; page <= firstPage.getPages(); page++) {
+            systemUserService.query(new UserQuery(page, 200, null, null, null), scope)
+                    .getList().stream()
+                    .map(this::toCompatibilitySummary)
+                    .forEach(result::add);
+        }
+        return List.copyOf(result);
     }
 
-    /**
-     * 分页查询用户
-     *
-     * @param page  当前页
-     * @param count 每页查询数量
-     * @return 分页用户列表
-     */
+    @PreAuthorize("@authz.require('system:user:list')")
     @GetMapping("/users")
     @Operation(summary = "分页查询用户", security = @SecurityRequirement(name = JwtUtils.HEADER))
-    @Parameter(name = "page", description = "当前页", required = true)
-    @Parameter(name = "count", description = "每页查询数量", required = true)
-    public PageInfo<User> users(int page, int count) {
-        return userService.getUsers(page, count);
+    public PageInfo<UserSummary> users(@RequestParam int page, @RequestParam int count) {
+        return systemUserService.query(
+                        new UserQuery(page, count, null, null, null),
+                        decisionScope("system:user:list"))
+                .convert(this::toCompatibilitySummary);
     }
 
-    @RequestMapping("/changePushKey")
-    @Operation(summary = "修改pushkey", security = @SecurityRequirement(name = JwtUtils.HEADER))
-    @Parameter(name = "userId", description = "用户Id", required = true)
-    @Parameter(name = "pushKey", description = "新的pushKey", required = true)
-    public void changePushKey(@RequestParam Integer userId,@RequestParam String pushKey) {
-        // 获取当前登录用户id
-        int currenRoleId = SecurityUtils.getUserInfo().getRole().getId();
-        WVPResult<String> result = new WVPResult<>();
-        if (currenRoleId != 1) {
-            // 只用角色id为0才可以删除和添加用户
-            throw new ControllerException(ErrorCode.ERROR400.getCode(), "用户无权限");
-        }
-        int resetPushKeyResult = userService.changePushKey(userId,pushKey);
-        if (resetPushKeyResult <= 0) {
-            throw new ControllerException(ErrorCode.ERROR100);
-        }
+    @PreAuthorize("@authz.require('system:role:assign')")
+    @PutMapping("/{userId}/roles")
+    @Operation(summary = "分配用户角色", security = @SecurityRequirement(name = JwtUtils.HEADER))
+    public void assignRoles(
+            @PathVariable long userId,
+            @Valid @RequestBody AssignRolesRequest request) {
+        systemUserService.assignRoles(
+                userId, request.roleIds(), decisionScope("system:role:assign"));
     }
 
+    @PreAuthorize("@authz.require('system:user:edit')")
+    @PostMapping("/changePushKey")
+    @Operation(summary = "修改推流密钥", security = @SecurityRequirement(name = JwtUtils.HEADER))
+    public void changePushKey(@RequestParam long userId, @RequestParam String pushKey) {
+        systemUserService.changePushKey(
+                userId, pushKey, decisionScope("system:user:edit"));
+    }
+
+    @PreAuthorize("@authz.require('system:user:resetPwd')")
     @PostMapping("/changePasswordForAdmin")
-    @Operation(summary = "管理员修改普通用户密码", security = @SecurityRequirement(name = JwtUtils.HEADER))
-    @Parameter(name = "adminId", description = "管理员id", required = true)
-    @Parameter(name = "userId", description = "用户id", required = true)
-    @Parameter(name = "password", description = "新密码（未md5加密的密码）", required = true)
-    public void changePasswordForAdmin(@RequestParam int userId, @RequestParam String password) {
-        // 获取当前登录用户id
-        LoginUser userInfo = SecurityUtils.getUserInfo();
-        if (userInfo == null) {
-            throw new ControllerException(ErrorCode.ERROR100);
-        }
-        Role role = userInfo.getRole();
-        if (role != null && role.getId() == 1) {
-            boolean result = userService.changePassword(userId, DigestUtils.md5DigestAsHex(password.getBytes()));
-            if (!result) {
-                throw new ControllerException(ErrorCode.ERROR100);
-            }
-        }
+    @Operation(summary = "管理员重置用户密码", security = @SecurityRequirement(name = JwtUtils.HEADER))
+    public void resetPassword(
+            @RequestParam long userId,
+            @RequestParam @Size(min = 8, max = 128) String password) {
+        systemUserService.resetPassword(
+                userId,
+                new ResetPasswordRequest(password),
+                decisionScope("system:user:resetPwd"));
     }
 
-    @PostMapping("/userInfo")
-    @Operation(summary = "管理员修改普通用户密码")
-    public LoginUser getUserInfo() {
-        // 获取当前登录用户id
-        LoginUser userInfo = SecurityUtils.getUserInfo();
+    @PreAuthorize("isAuthenticated()")
+    @RequestMapping("/userInfo")
+    @Operation(summary = "当前用户摘要", security = @SecurityRequirement(name = JwtUtils.HEADER))
+    public UserSummary getUserInfo() {
+        AuthPrincipal principal = currentPrincipalService.requireCurrent();
+        return UserSummary.from(userService.getUserById(principal.userId()));
+    }
 
-        if (userInfo == null) {
-            throw new ControllerException(ErrorCode.ERROR100);
+    private DepartmentScope decisionScope(String permissionCode) {
+        AuthPrincipal principal = currentPrincipalService.requireCurrent();
+        return departmentScopeService.resolveDecisionScope(principal, permissionCode);
+    }
+
+    private CreateUserRequest withDefaultDepartment(CreateUserRequest request) {
+        if (request.deptId() != null) {
+            return request;
         }
-        User user = userService.getUser(userInfo.getUsername(), userInfo.getPassword());
-        return new LoginUser(user, LocalDateTime.now());
+        AuthPrincipal principal = currentPrincipalService.requireCurrent();
+        return new CreateUserRequest(
+                request.username(),
+                request.password(),
+                request.nickname(),
+                principal.deptId(),
+                request.roleIds());
+    }
+
+    private UserSummary toCompatibilitySummary(
+            com.genersoft.iot.vmp.auth.user.dto.UserSummary user) {
+        return new UserSummary(
+                user.getId(),
+                user.getUsername(),
+                user.getNickname(),
+                user.getDeptId(),
+                user.getStatus(),
+                user.getLocked() != 0,
+                user.getRoleIds(),
+                user.getLastLoginAt());
     }
 }

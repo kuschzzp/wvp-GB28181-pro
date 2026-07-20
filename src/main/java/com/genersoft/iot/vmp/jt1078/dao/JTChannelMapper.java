@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.jt1078.dao;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.jt1078.bean.JTChannel;
 import com.genersoft.iot.vmp.jt1078.dao.provider.JTChannelProvider;
 import org.apache.ibatis.annotations.*;
@@ -10,7 +11,17 @@ import java.util.List;
 public interface JTChannelMapper {
 
     @SelectProvider(type = JTChannelProvider.class, method = "selectAll")
-    List<JTChannel> selectAll(@Param("terminalDbId") int terminalDbId, @Param("query") String query);
+    List<JTChannel> selectAll(
+            @Param("terminalDbId") int terminalDbId,
+            @Param("query") String query,
+            @Param("scope") VideoScopeQuery scope);
+
+    @SelectProvider(
+            type = JTChannelProvider.class,
+            method = "selectAllForInternalMaintenance")
+    List<JTChannel> selectAllForInternalMaintenance(
+            @Param("terminalDbId") int terminalDbId,
+            @Param("query") String query);
 
     @Update(value = {" <script>" +
             "UPDATE wvp_jt_channel " +
@@ -41,6 +52,9 @@ public interface JTChannelMapper {
 
     @Delete("delete from wvp_jt_channel where id = #{id}")
     void delete(@Param("id") int id);
+
+    @Delete("delete from wvp_jt_channel where terminal_db_id = #{terminalDbId}")
+    void deleteByTerminalDbId(@Param("terminalDbId") int terminalDbId);
 
     @SelectProvider(type = JTChannelProvider.class, method = "selectChannelByChannelId")
     JTChannel selectChannelByChannelId(@Param("terminalDbId") int terminalDbId, @Param("channelId") Integer channelId);

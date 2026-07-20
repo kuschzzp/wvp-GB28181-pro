@@ -1,6 +1,6 @@
 <template>
   <div id="DeviceRecord" class="app-container">
-    <div :style="boxStyle">
+    <div v-if="$auth.hasPermi(['video:jt:record'])" :style="boxStyle">
       <div>
         <div class="record-list-box-box">
           <div v-if="showSidebar">
@@ -32,6 +32,7 @@
                   {{ getFileShowName(item) }}
                 </el-tag>
                 <a
+                  v-if="$auth.hasPermi(['video:jt:record'])"
                   class="el-icon-download"
                   style="color: #409EFF;font-weight: 600;margin-left: 10px;"
                   target="_blank"
@@ -52,31 +53,11 @@
             <div class="el-icon-loading" />
             <div style="width: 100%; line-height: 2rem">正在加载</div>
           </div>
-          <jessibucaPlayer
-            v-if="activePlayer === 'jessibuca'"
+          <player-tabs
             ref="recordVideoPlayer"
-            :has-audio="true"
-            :height="'calc(100vh - 250px)'"
-            :show-button="false"
-            autoplay
-            @playStatusChange="playingChange"
-            @playTimeChange="showPlayTimeChange"
-          />
-          <rtcPlayer
-            v-if="activePlayer === 'webRTC'"
-            ref="recordVideoPlayer"
-            :has-audio="true"
-            :show-controls="false"
             style="height: calc(100vh - 250px)"
-            autoplay
-            @playStatusChange="playingChange"
-            @playTimeChange="showPlayTimeChange"
-          />
-          <h265web
-            v-if="activePlayer === 'h265web'"
-            ref="recordVideoPlayer"
-            :height="'calc(100vh - 250px)'"
             :show-button="false"
+            :show-tab="false"
             :has-audio="true"
             @playStatusChange="playingChange"
             @playTimeChange="showPlayTimeChange"
@@ -227,6 +208,13 @@
         </div>
       </div>
     </div>
+    <el-alert
+      v-else
+      title="当前账号没有 JT/T 录像权限"
+      type="info"
+      :closable="false"
+      show-icon
+    />
     <record-download ref="recordDownload" />
     <chooseTimeRange ref="chooseTimeRange" />
   </div>
@@ -234,19 +222,18 @@
 
 <script>
 
-import h265web from '../../common/h265web.vue'
-import jessibucaPlayer from '../../common/jessibuca.vue'
-import rtcPlayer from '../../common/rtcPlayer.vue'
+import playerTabs from '../../common/playerTabs.vue'
 import VideoTimeline from '../../common/VideoTimeLine/index.vue'
 import recordDownload from '../../dialog/recordDownload.vue'
 import ChooseTimeRange from '../../dialog/chooseTimeRange.vue'
 import moment from 'moment'
 import screenfull from 'screenfull'
+import { openDownloadTicket } from '@/utils/downloadTicket'
 
 export default {
   name: 'DeviceRecord',
   components: {
-    h265web, jessibucaPlayer, rtcPlayer, VideoTimeline, recordDownload, ChooseTimeRange
+    playerTabs, VideoTimeline, recordDownload, ChooseTimeRange
   },
   data() {
     return {
@@ -282,11 +269,6 @@ export default {
       showOtherSpeed: true,
       timeSegments: [],
       activePlayer: 'jessibuca',
-      playerUrls: {
-        jessibuca: ['ws_flv', 'wss_flv'],
-        webRTC: ['rtc', 'rtcs'],
-        h265web: ['ws_flv', 'wss_flv']
-      },
       pickerOptions: {
         cellClassName: (date) => {
           // 通过显示一个点标识这一天有录像
@@ -339,24 +321,23 @@ export default {
   },
   methods: {
     changePlayer(player) {
+      if (!this.$auth.hasPermi(['video:jt:record'])) return
       if (this.activePlayer === player) return
       this.activePlayer = player
       if (this.streamInfo) {
-        this.videoUrl = this.getUrlByStreamInfo()
-        this.$nextTick(() => {
-          if (this.$refs.recordVideoPlayer) {
-            this.$refs.recordVideoPlayer.play(this.videoUrl)
-          }
-        })
+        this.$refs.recordVideoPlayer && this.$refs.recordVideoPlayer.switchPlayer(player)
       }
     },
     sidebarControl() {
       this.showSidebar = !this.showSidebar
     },
     snap() {
+      if (!this.$auth.hasPermi(['video:jt:record'])) return
+      if (!this.$refs.recordVideoPlayer) return
       this.$refs.recordVideoPlayer.screenshot()
     },
     playLast() {
+      if (!this.$auth.hasPermi(['video:jt:record'])) return
       // 播放上一个
       if (this.chooseFileIndex === 0) {
         return
@@ -364,6 +345,7 @@ export default {
       this.chooseFile(this.chooseFileIndex - 1)
     },
     playNext() {
+      if (!this.$auth.hasPermi(['video:jt:record'])) return
       // 播放上一个
       if (this.chooseFileIndex === this.detailFiles.length - 1) {
         return
@@ -374,6 +356,7 @@ export default {
       this.control(command[0], command[1])
     },
     control(command, playbackSpeed, time) {
+      if (!this.$auth.hasPermi(['video:jt:record'])) return
       // 倍速播放
       this.playSpeed = playbackSpeed
       this.$refs.recordVideoPlayer.setPlaybackRate(parseFloat(this.playSpeed))
@@ -396,7 +379,8 @@ export default {
       this.control(1, 0)
     },
     play() {
-      if (this.$refs.recordVideoPlayer.loaded) {
+      if (!this.$auth.hasPermi(['video:jt:record'])) return
+      if (this.$refs.recordVideoPlayer.isLoaded()) {
         this.$refs.recordVideoPlayer.unPause()
       } else {
         this.playRecord(this.showTimeValue, this.endTime)
@@ -409,8 +393,9 @@ export default {
         this.isFullScreen = false
         return
       }
-      const playerWidth = this.$refs.recordVideoPlayer.playerWidth
-      const playerHeight = this.$refs.recordVideoPlayer.playerHeight
+      const playerWrapper = this.$refs.recordVideoPlayer.$refs.playerWrapper
+      const playerWidth = playerWrapper ? playerWrapper.clientWidth : 0
+      const playerHeight = playerWrapper ? playerWrapper.clientHeight : 0
       screenfull.request(document.getElementById('playerBox'))
       screenfull.on('change', (event) => {
         this.$refs.recordVideoPlayer.resize(playerWidth, playerHeight)
@@ -419,6 +404,7 @@ export default {
       this.isFullScreen = true
     },
     dateChange() {
+      if (!this.$auth.hasPermi(['video:jt:record'])) return
       this.detailFiles = []
       this.$store.dispatch('jtDevice/queryRecordList', {
         phoneNumber: this.phoneNumber,
@@ -469,6 +455,7 @@ export default {
       }
     },
     chooseFile(index) {
+      if (!this.$auth.hasPermi(['video:jt:record'])) return
       this.chooseFileIndex = index
       const chooseFile = this.detailFiles[this.chooseFileIndex]
       console.log(chooseFile)
@@ -476,6 +463,7 @@ export default {
       this.playRecord(chooseFile.startTime, this.endTime)
     },
     playRecord(startTime, endTime) {
+      if (!this.$auth.hasPermi(['video:jt:record'])) return
       if (this.streamInfo !== null) {
         this.stopPlayRecord(() => {
           this.streamInfo = null
@@ -496,26 +484,17 @@ export default {
           .then((data) => {
             this.streamInfo = data
             this.streamId = data.stream
-            this.videoUrl = this.getUrlByStreamInfo()
             this.hasAudio = this.streamInfo.tracks && this.streamInfo.tracks.length > 1
             this.$nextTick(() => {
               if (this.$refs.recordVideoPlayer) {
-                this.$refs.recordVideoPlayer.play(this.videoUrl)
+                this.$refs.recordVideoPlayer.setStreamInfo(data.playable)
               }
             })
           })
       }
     },
-    getUrlByStreamInfo() {
-      const keys = this.playerUrls[this.activePlayer]
-      if (location.protocol === 'https:') {
-        this.videoUrl = this.streamInfo[keys[1]]
-      } else {
-        this.videoUrl = this.streamInfo[keys[0]]
-      }
-      return this.videoUrl
-    },
     downloadFile(row) {
+      if (!this.$auth.hasPermi(['video:jt:record'])) return
       if (!row) {
         const startTimeStr = moment(new Date(this.chooseDate + ' 00:00:00').getTime() + this.playTime[0] * 1000).format('YYYY-MM-DD HH:mm:ss')
         const endTimeStr = moment(new Date(this.chooseDate + ' 00:00:00').getTime() + this.playTime[1] * 1000).format('YYYY-MM-DD HH:mm:ss')
@@ -530,6 +509,7 @@ export default {
       this.downloadRecord(row)
     },
     downloadRecord: function(row) {
+      if (!this.$auth.hasPermi(['video:jt:record'])) return
       const loading = this.$loading({
         lock: true,
         text: '正在请求录像',
@@ -547,15 +527,7 @@ export default {
         streamType: row.streamType,
         storageType: row.storageType
       }).then(data => {
-        console.log(data)
-        // const a = document.createElement('a')
-        const baseUrl = window.baseUrl
-        let dev = (process.env.NODE_ENV === 'development' ? process.env.VUE_APP_BASE_API : baseUrl)
-        // a.href =
-        // a.download = data + '.mp4'
-        // a.click()
-
-        window.open(`${dev}/api/jt1078/playback/download?path=${data}`)
+        openDownloadTicket(data)
       }).finally(() => {
         loading.close()
       })

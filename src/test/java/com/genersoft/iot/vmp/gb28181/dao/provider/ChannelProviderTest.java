@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.gb28181.dao.provider;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.gb28181.bean.Device;
 import com.genersoft.iot.vmp.gb28181.bean.Group;
 import com.genersoft.iot.vmp.web.custom.bean.CameraGroup;
@@ -90,7 +91,7 @@ class ChannelProviderTest {
 
     @Test
     void queryListWithChildForSy_shouldUseBindVariables() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         CameraGroup cg1 = new CameraGroup();
         cg1.setDeviceId("CG001");
         CameraGroup cg2 = new CameraGroup();
@@ -104,7 +105,7 @@ class ChannelProviderTest {
 
     @Test
     void queryListWithChildForSy_withQuery_shouldUseBindVariable() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         params.put("query", "search-term");
         params.put("groupList", Collections.singletonList(new CameraGroup()));
         String sql = provider.queryListWithChildForSy(params);
@@ -114,7 +115,7 @@ class ChannelProviderTest {
 
     @Test
     void queryListWithChildForSy_withSort_shouldUseWhitelist() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         params.put("groupList", Collections.singletonList(new CameraGroup()));
         params.put("sortName", "gbId");
         params.put("order", true);
@@ -125,7 +126,7 @@ class ChannelProviderTest {
 
     @Test
     void queryListWithChildForSy_withSortDesc_shouldUseDesc() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         params.put("groupList", Collections.singletonList(new CameraGroup()));
         params.put("sortName", "gbId");
         params.put("order", false);
@@ -137,7 +138,7 @@ class ChannelProviderTest {
 
     @Test
     void queryListInBox_shouldUseBindVariables() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         CameraGroup cg = new CameraGroup();
         cg.setDeviceId("BOX001");
         params.put("groupList", Collections.singletonList(cg));
@@ -154,7 +155,7 @@ class ChannelProviderTest {
 
     @Test
     void queryListInCircleForMysql_shouldUseBindVariablesForGeometry() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         CameraGroup cg = new CameraGroup();
         cg.setDeviceId("CIRCLE001");
         params.put("groupList", Collections.singletonList(cg));
@@ -176,7 +177,7 @@ class ChannelProviderTest {
 
     @Test
     void queryListInCircleForKingBase_shouldUseBindVariablesForGeometry() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         CameraGroup cg = new CameraGroup();
         cg.setDeviceId("CIRCLE002");
         params.put("groupList", Collections.singletonList(cg));
@@ -198,7 +199,7 @@ class ChannelProviderTest {
 
     @Test
     void queryListInPolygonForMysql_shouldUseBindVariablesForPoints() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         CameraGroup cg = new CameraGroup();
         cg.setDeviceId("POLY001");
         params.put("groupList", Collections.singletonList(cg));
@@ -228,7 +229,7 @@ class ChannelProviderTest {
 
     @Test
     void queryListInPolygonForKingBase_shouldUseBindVariablesForPoints() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         CameraGroup cg = new CameraGroup();
         cg.setDeviceId("POLY002");
         params.put("groupList", Collections.singletonList(cg));
@@ -252,7 +253,7 @@ class ChannelProviderTest {
 
     @Test
     void queryListInCircleForMysql_shouldNotContainInjectionPayload() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         CameraGroup cg = new CameraGroup();
         cg.setDeviceId("NORMAL");
         params.put("groupList", Collections.singletonList(cg));
@@ -280,6 +281,13 @@ class ChannelProviderTest {
     }
 
     // ========== helper ==========
+
+    private Map<String, Object> scopedParams() {
+        Map<String, Object> params = new HashMap<>();
+        params.put("scope", new VideoScopeQuery(
+                true, Set.of(), Set.of(), Set.of(), "video:channel:list", 1L));
+        return params;
+    }
 
     private int countOccurrences(String str, String substr) {
         int count = 0;

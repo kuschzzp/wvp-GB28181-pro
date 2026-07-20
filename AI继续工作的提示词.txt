@@ -1,0 +1,39 @@
+请接着当前项目继续工作，项目路径是：
+/Users/kusch/Documents/myProjects/yb/wvp-GB28181-pro
+
+请全程用中文回复。严格遵守这些规则：
+1. 不要未经允许 git commit / git push。
+2. 修改任何文件前，必须先读取该文件最新内容。
+3. 不要运行 WVP 项目、Docker Compose 或临时验证服务，除非我明确要求。
+4. 如果创建临时文件夹或启动临时服务，结束前必须清理和关闭。
+5. 工作区可能已有很多修改，不要还原用户已有改动。
+6. 优先阅读代码和文档判断，不要凭空猜。
+
+当前背景：
+- 这个项目是 wvp-GB28181-pro，主要负责 GB28181 设备接入、SIP 信令、设备/通道管理、播放调度、平台管理。
+- 核心音视频收流、转码、分发、播放地址能力主要依赖 ZLMediaKit。
+- 如果有一批 GB28181 摄像头，可以基于 WVP + ZLMediaKit 做统一管理平台；也可以自己基于 ZLMediaKit 开发管理平台，但需要自己实现 GB28181 信令、设备管理、权限、业务平台能力。
+- 我们已经规划并改造了类似 RuoYi 的 RBAC 方向：用户、角色、菜单权限、部门、部门数据权限、视频资源组授权。
+- 部门只控制用户组织归属和组织数据权限，不直接等同于摄像头权限；摄像头/通道权限使用独立的“视频资源组授权”实现。
+
+已有文档和重要文件：
+- RBAC / 权限改造相关设计文档在 docs/superpowers/specs/ 和 docs/superpowers/plans/ 下。
+- 新增了独立部署学习手册目录：deployment-guide/
+- 部署手册入口：deployment-guide/README.md
+- 部署手册面向新手，全新部署，不考虑旧系统升级。
+- 部署目标环境主要是 CentOS/Rocky，也覆盖 Ubuntu。
+- 用户位于中国大陆，所以部署文档中 Docker CE、系统源、Maven/npm、容器内 apt、镜像拉取等需要尽量提供国内可用镜像方案。
+- 不推荐匿名公共 Docker Hub 代理；生产推荐自有阿里云 ACR / 腾讯云 TCR / 华为云 SWR 等镜像仓库方案。
+- Docker Compose 中 bind mount 路径不能出现中文路径。
+- ZLMediaKit HTTPS 播放票据端口来自 ZLMediaKit 上报的 [http] sslport=443；WVP 的 MediaHttps 不能直接控制 ZLMediaKit 播放 URL。正式部署推荐域名 + 外层真实 443 TLS 入口；可信局域网可用 HTTP 实验模式。
+
+当前部署文档状态：
+- deployment-guide/ 下已有 README、10 个章节、3 份 .env 示例，总计约 14 个文件。
+- 已做过静态检查：Markdown 链接、bash 代码块、env 变量、Compose 服务、初始化 SQL、中文路径、代码围栏、临时文件等。
+- 没有本任务启动的服务或子代理需要清理。
+
+如果继续工作，请先执行只读检查：
+1. git status --short
+2. rg --files deployment-guide docs/superpowers
+3. 阅读 deployment-guide/README.md 和当前要修改的具体文件
+然后根据我的最新指令继续，不要重复已完成工作。

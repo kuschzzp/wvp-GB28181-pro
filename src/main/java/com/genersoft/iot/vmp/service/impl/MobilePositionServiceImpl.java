@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.service.impl;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.gb28181.bean.MobilePosition;
 import com.genersoft.iot.vmp.gb28181.bean.Platform;
 import com.genersoft.iot.vmp.gb28181.dao.MobilePositionMapper;
@@ -40,7 +41,11 @@ public class MobilePositionServiceImpl implements IMobilePositionService {
      * 查询移动位置轨迹
      */
     @Override
-    public synchronized List<MobilePosition> queryMobilePositions(Integer channelId, String startTime, String endTime) {
+    public synchronized List<MobilePosition> queryMobilePositions(
+            Integer channelId,
+            String startTime,
+            String endTime,
+            VideoScopeQuery scope) {
         Long startTimestamp = null;
         Long endTimestamp = null;
         if (startTime != null) {
@@ -49,7 +54,8 @@ public class MobilePositionServiceImpl implements IMobilePositionService {
         if (endTime != null) {
             endTimestamp = DateUtil.yyyy_MM_dd_HH_mm_ssToTimestampMs(endTime);
         }
-        return mobilePositionMapper.queryPositionByDeviceIdAndTime(channelId, startTimestamp, endTimestamp);
+        return mobilePositionMapper.queryPositionByDeviceIdAndTime(
+                channelId, startTimestamp, endTimestamp, scope);
     }
 
     @Override
@@ -61,8 +67,8 @@ public class MobilePositionServiceImpl implements IMobilePositionService {
      * 查询最新移动位置
      */
     @Override
-    public MobilePosition queryLatestPosition(Integer channelId) {
-        return mobilePositionMapper.queryLatestPosition(channelId);
+    public MobilePosition queryLatestPosition(Integer channelId, VideoScopeQuery scope) {
+        return mobilePositionMapper.queryLatestPosition(channelId, scope);
     }
 
     @Async

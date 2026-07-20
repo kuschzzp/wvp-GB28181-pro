@@ -1,7 +1,11 @@
 package com.genersoft.iot.vmp.gb28181.dao;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
+import com.genersoft.iot.vmp.authorization.video.provider.VideoOverviewProvider;
 import com.genersoft.iot.vmp.gb28181.bean.Device;
 import com.genersoft.iot.vmp.gb28181.bean.DeviceChannel;
+import com.genersoft.iot.vmp.gb28181.dao.provider.DeviceProvider;
+import com.genersoft.iot.vmp.vmanager.bean.ResourceBaseInfo;
 import org.apache.ibatis.annotations.*;
 import org.springframework.stereotype.Repository;
 
@@ -13,6 +17,9 @@ import java.util.List;
 @Mapper
 @Repository
 public interface DeviceMapper {
+
+    @SelectProvider(type = VideoOverviewProvider.class, method = "deviceOverview")
+    ResourceBaseInfo getOverview(@Param("scope") VideoScopeQuery scope);
 
     @Select("SELECT " +
             "id, " +
@@ -329,52 +336,12 @@ public interface DeviceMapper {
     @Select("select * FROM wvp_device where  as_message_channel = true")
     List<Device> queryDeviceWithAsMessageChannel();
 
-    @Select(" <script>" +
-            "SELECT " +
-            "coalesce(custom_name, name) as name, " +
-            "id" +
-            ",device_id" +
-            ",manufacturer" +
-            ",model" +
-            ",firmware" +
-            ",transport" +
-            ",stream_mode" +
-            ",on_line" +
-            ",ip" +
-            ",create_time" +
-            ",update_time" +
-            ",port" +
-            ",expires" +
-            ",subscribe_cycle_for_catalog" +
-            ",subscribe_cycle_for_mobile_position" +
-            ",mobile_position_submission_interval" +
-            ",subscribe_cycle_for_alarm" +
-            ",host_address" +
-            ",charset" +
-            ",ssrc_check" +
-            ",geo_coord_sys" +
-            ",media_server_id" +
-            ",sdp_ip" +
-            ",local_ip" +
-            ",password" +
-            ",as_message_channel" +
-            ",heart_beat_interval" +
-            ",heart_beat_count" +
-            ",position_capability" +
-            ",broadcast_push_after_ack" +
-            ",server_id" +
-            ",(SELECT count(0) FROM wvp_device_channel dc WHERE dc.data_type = #{dataType} and dc.data_device_id= de.id) as channel_count " +
-            " FROM wvp_device de" +
-            " where 1 = 1 "+
-            " <if test='status != null'> AND de.on_line=#{status}</if>"+
-            " <if test='query != null'> AND (" +
-            " coalesce(custom_name, name) LIKE concat('%',#{query},'%') escape '/' " +
-            " OR device_id LIKE concat('%',#{query},'%') escape '/' " +
-            " OR ip LIKE concat('%',#{query},'%') escape '/')" +
-            "</if> " +
-            " order by create_time desc, device_id " +
-            " </script>")
-    List<Device> getDeviceList(@Param("dataType") Integer dataType, @Param("query") String query, @Param("status") Boolean status);
+    @SelectProvider(type = DeviceProvider.class, method = "getDeviceList")
+    List<Device> getDeviceList(
+            @Param("dataType") Integer dataType,
+            @Param("query") String query,
+            @Param("status") Boolean status,
+            @Param("scope") VideoScopeQuery scope);
 
     @Select("select * from wvp_device_channel where id = #{id}")
     DeviceChannel getRawChannel(@Param("id") int id);

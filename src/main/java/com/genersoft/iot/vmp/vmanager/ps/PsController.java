@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.vmanager.ps;
 
+import com.genersoft.iot.vmp.authorization.video.StreamResourceAccessAuthorizer;
 import com.genersoft.iot.vmp.common.VideoManagerConstants;
 import com.genersoft.iot.vmp.common.enums.MediaStreamUtil;
 import com.genersoft.iot.vmp.conf.DynamicTask;
@@ -28,6 +29,7 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
@@ -40,7 +42,13 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 @RestController
 @RequestMapping("/api/ps")
+@PreAuthorize("@authz.check('video:ps:manage')")
 public class PsController {
+
+    private static final String PS_MANAGE_PERMISSION = "video:ps:manage";
+
+    @Autowired
+    private StreamResourceAccessAuthorizer streamResourceAccessAuthorizer;
 
     @Autowired
     private HookSubscribe hookSubscribe;
@@ -195,6 +203,8 @@ public class PsController {
                         String callId,
                         Boolean isUdp
         ) {
+        streamResourceAccessAuthorizer.requireAppStream(
+                PS_MANAGE_PERMISSION, app, stream);
         log.info("[第三方PS服务对接->发送流] " +
                         "ssrc->{}, \r\n" +
                         "dstIp->{}, \n" +
@@ -264,6 +274,10 @@ public class PsController {
         if (sendInfo == null){
             throw new ControllerException(ErrorCode.ERROR100.getCode(), "未开启发流");
         }
+        streamResourceAccessAuthorizer.requireAppStream(
+                PS_MANAGE_PERMISSION,
+                sendInfo.getPushApp(),
+                sendInfo.getPushStream());
         MediaServer mediaServerItem = mediaServerService.getDefaultMediaServer();
         boolean result = mediaServerService.stopSendRtp(mediaServerItem, sendInfo.getPushApp(), sendInfo.getStream(), sendInfo.getPushSSRC());
         if (!result) {

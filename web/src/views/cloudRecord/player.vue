@@ -287,8 +287,7 @@ export default {
       this.startTime = startTime
       this.$nextTick(() => {
         if (this.$refs.recordVideoPlayer) {
-          console.log(streamInfo)
-          this.$refs.recordVideoPlayer.setStreamInfo(streamInfo)
+          this.$refs.recordVideoPlayer.setStreamInfo(streamInfo.playable)
         }
       })
     },

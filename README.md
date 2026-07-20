@@ -27,6 +27,56 @@ WEB VIDEO PLATFORM是一个基于GB28181-2016、部标808、部标1078标准实�
 wvp使用文档 [https://doc.wvp-pro.cn](https://doc.wvp-pro.cn)  
 ZLM使用文档 [https://github.com/ZLMediaKit/ZLMediaKit](https://github.com/ZLMediaKit/ZLMediaKit)
 
+## 身份认证、功能 RBAC 与视频资源授权（2.8.0）
+
+当前版本已接入多角色、菜单/按钮权限、后端动态路由、JWT `tokenVersion` 失效机制和 API Key 安全存储底座。部门只用于人员组织和用户管理数据范围；摄像头、通道、推拉流、录像等资源不挂部门，由独立视频资源组维护资源与角色之间的授权关系。
+
+浏览器认证接口：
+
+- `POST /api/auth/login`：JSON 请求体提交用户名和原始密码，前端不再计算 MD5；旧 MD5 密码在首次成功登录后升级为 BCrypt。
+- `GET /api/auth/profile`：返回当前用户、角色键、功能权限和授权版本，不返回密码、pushKey、JWT claims 或 API Key。
+- `GET /api/menu/routers`：返回当前用户可见的菜单树；前端只解析固定组件白名单，未知组件直接拒绝。
+- `POST /api/auth/logout`：撤销当前 JWT；Redis 不可用时递增用户 `tokenVersion` 作为兜底。
+
+除登录和受控公共入口外，请求通过 `access-token` 请求头携带 JWT。未登录返回 HTTP 401，已登录但权限不足在 enforce 模式返回 HTTP 403。
+
+### 授权模式
+
+生产迁移阶段默认使用：
+
+```yaml
+authorization:
+  mode: audit
+```
+
+- `audit`：计算并写入真实授权结果；对旧业务端点暂时兼容放行，用于上线前收集缺失角色和权限。拒绝记录写入 `wvp_authz_audit`。
+- `enforce`：真实阻断无权限请求。只有完成角色配置、端点矩阵清零并观察至少一个完整业务周期后才可切换。
+- `disabled`：仅允许 `dev`、`test`、`local` 环境，生产环境启动时会拒绝该配置。
+
+计划 3 的 Task 1～12 已完成自动化阶段验收，用户侧业务验证进行中。Task 12 已覆盖设备/通道、二级统一通道、`/api/sy` 自定义摄像头、平台共享通道、RTP/PS 发流、媒体信息、快照、活动 SSRC、云录像合并任务和 DeviceControl SIP 指令等入口。438 个 HTTP Handler 已全部分类，其中 286 个资源端点只引用代码中真实注册的 4 类解析器，不再包含 `REQUIRE_RESOURCE + LEGACY_AUDIT`；7 个定向测试类共 94 项全部通过。旧 `ChannelProviderTest` 已补充强制 `VideoScopeQuery` 夹具，其自身 17 项测试通过；后端全量覆盖 91 个测试套件、497 项测试，0 失败、0 错误、1 项既有跳过。前端 20 个测试套件、96 项测试全部通过，ESLint 为 0 error（保留 680 条 warning）。
+
+独立视频资源组、角色视频范围和统一授权门面已经接入；设备、GB28181 通道、统一通道、JT1078 终端/通道、推流、拉流、告警、位置、云录像、首页统计与导出均已在数据库层按视频范围过滤。云录像新记录会在同一事务固化 `source_type/source_id/channel_id`；旧录像按 `call_id -> app+stream 当前/历史会话 -> 统一通道映射` 的顺序回填，只有唯一候选才绑定，无法唯一绑定的记录标记为 `LEGACY_UNBOUND` 并保存 `source_reason`，仅 systemUser 可见。HTTP 查询与内部维护查询已显式拆分，搜索、时间范围、分页、统计和导出复用同一授权条件。GB28181 点播、停止、回放控制、PTZ、广播、对讲和国标录像命令、JT1078 控制与媒体操作、推流、拉流以及兼容 API，已在业务副作用前解析内部稳定资源并调用对象授权门面；受保护 MVC Handler 必须为可被 Method Security 代理的 `public` 方法。GB 设备/通道、JT 终端/通道、推流和拉流删除时会在同一业务事务清理授权关系；通道内部 ID 变化时只允许按同类型稳定来源唯一迁移显式授权，零候选或多候选会停止迁移并持久化人工处理审计项，不会扩大为来源设备授权。Task 9 的 17 个组合定向测试类共 75 项测试全部通过，覆盖直接控制器、MockMvc 403/404、Method Security、解析器、稳定 ID、删除回滚与迁移人工项。Task 10 已把 JT1078 `/playback/download` 从客户端任意服务器 `path` 改为服务端受控 UUID `downloadId`，并在输出前按原终端/通道重新授权；同时补齐派生对象、畸形参数、批量全量授权和地图轨迹参数门禁。短期下载票据仍由计划 4 实现。`enforce` 模式按已接入的视频范围过滤，`audit` 模式仍兼容放行并记录审计。升级得到的 `legacy_role_*` 会先获得显式兼容授权，管理员第一次保存角色后由实际菜单配置整体替换；重复执行升级脚本不会把兼容权限重新授回。
+
+ZLMediaKit/ABL Hook 已启用独立媒体节点认证链：每节点使用独立 Hook 密钥、节点类型和可选 CIDR 白名单，敏感回调支持 timestamp/nonce 重放防护；该链与用户 JWT/API Key 完全隔离。Hook 密钥在数据库中只保存 HMAC 哈希，轮换时保留旧密钥最长 5 分钟，管理接口不返回明文。
+
+旧版“构建推流地址”会把长期 `pushKey` 暴露给浏览器并生成可重复使用的 MD5 签名，当前阶段已显式停用；已有外部推流任务不受页面调整影响，新的短期推流凭证随计划 4 的媒体安全改造接入。GB28181/JT1078 内部对讲流按服务端既有规则不使用普通推流 `pushKey`。
+
+### Docker 全新部署
+
+`docker/` 目录已经内置完整的 2.8 MySQL 初始化链，Compose 只挂载英文路径。使用空 MySQL 数据目录启动时，会依次创建业务基础结构、权限结构和最终用户角色关系表，不需要额外执行 `数据库/` 下的升级脚本。部署前必须在 `docker/.env` 设置两个不同的 `API_KEY_PEPPER` 和 `MEDIA_HOOK_SECRET_PEPPER`。
+
+完整步骤见 [Docker 全新部署说明](docker/README.md)。该入口只用于空库新装，不处理已有数据目录升级。
+
+### 非 Docker 升级与回滚
+
+1. 备份数据库，执行对应数据库的 `数据库/2.8.0/更新-*-2.8.0.sql` expand 脚本。
+2. 为生产环境配置持久化 JWK 文件、至少 32 字节的 `API_KEY_PEPPER` 和独立的 `MEDIA_HOOK_SECRET_PEPPER`；不要把真实密钥写进仓库。
+3. 先以 `authorization.mode=audit` 发布，配置用户多角色和菜单权限，持续检查 `wvp_authz_audit` 的 DENY。
+4. 验证动态菜单、401/403、旧密码升级和 API Key 后，再灰度切换 `enforce`。
+5. enforce 出现业务权限遗漏时，优先回切 `audit`，权限配置和审计数据不会丢失。contract 清理旧表之前仍可回滚旧应用；contract 之后只能恢复数据库快照，不能直接启动 2.7.4。
+
+完整的机器校验清单见 [HTTP 端点权限矩阵](docs/security/endpoint-permission-matrix.md)，设计与阶段边界见 [RBAC、部门与视频资源组设计](docs/superpowers/specs/2026-07-13-wvp-rbac-dept-resource-design.md)。
+
 # gitee仓库
 https://gitee.com/pan648540858/wvp-GB28181-pro.git
 

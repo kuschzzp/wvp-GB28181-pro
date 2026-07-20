@@ -1,5 +1,7 @@
 package com.genersoft.iot.vmp.gb28181.dao;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
+import com.genersoft.iot.vmp.authorization.video.provider.VideoOverviewProvider;
 import com.genersoft.iot.vmp.gb28181.bean.Device;
 import com.genersoft.iot.vmp.gb28181.bean.DeviceChannel;
 import com.genersoft.iot.vmp.gb28181.bean.DeviceMobilePosition;
@@ -9,6 +11,7 @@ import com.genersoft.iot.vmp.gb28181.dao.provider.MysqlChannelUpsertProvider;
 import com.genersoft.iot.vmp.gb28181.dao.provider.PostgresStyleUpsertProvider;
 import com.genersoft.iot.vmp.gb28181.dao.provider.H2ChannelUpsertProvider;
 import com.genersoft.iot.vmp.web.gb28181.dto.DeviceChannelExtend;
+import com.genersoft.iot.vmp.vmanager.bean.ResourceBaseInfo;
 import org.apache.ibatis.annotations.*;
 import org.springframework.stereotype.Repository;
 
@@ -21,6 +24,9 @@ import java.util.Map;
 @Mapper
 @Repository
 public interface DeviceChannelMapper {
+
+    @SelectProvider(type = VideoOverviewProvider.class, method = "channelOverview")
+    ResourceBaseInfo getOverview(@Param("scope") VideoScopeQuery scope);
 
 
     @Insert("<script> " +
@@ -94,7 +100,8 @@ public interface DeviceChannelMapper {
                                       @Param("businessGroupId") String businessGroupId, @Param("parentChannelId") String parentChannelId,
                                       @Param("query") String query, @Param("queryParent") Boolean queryParent,
                                       @Param("hasSubChannel") Boolean hasSubChannel, @Param("online") Boolean online,
-                                      @Param("channelIds") List<String> channelIds, @Param("hasStream") Boolean hasStream);
+                                      @Param("channelIds") List<String> channelIds, @Param("hasStream") Boolean hasStream,
+                                      @Param("scope") VideoScopeQuery scope);
 
     @SelectProvider(type = DeviceChannelProvider.class, method = "queryChannelsByDeviceDbId")
     List<DeviceChannel> queryChannelsByDeviceDbId(@Param("dataDeviceId") int dataDeviceId);
@@ -111,57 +118,15 @@ public interface DeviceChannelMapper {
     @Delete("DELETE FROM wvp_device_channel WHERE data_type=#{dataType} and data_device_id=#{dataDeviceId} AND device_id=#{deviceId}")
     int deleteForNotify(DeviceChannel channel);
 
-    @Select(value = {" <script>" +
-            " SELECT " +
-            " dc.id,\n" +
-            " dc.create_time,\n" +
-            " dc.update_time,\n" +
-            " dc.sub_count,\n" +
-            " coalesce(dc.gb_device_id, dc.device_id) as channel_id,\n" +
-            " de.device_id as device_id,\n" +
-            " coalesce(dc.gb_name, dc.name) as name,\n" +
-            " de.name as device_name,\n" +
-            " de.on_line as device_online,\n" +
-            " coalesce(dc.gb_manufacturer, dc.manufacturer) as manufacture,\n" +
-            " coalesce(dc.gb_model, dc.model) as model,\n" +
-            " coalesce(dc.gb_owner, dc.owner) as owner,\n" +
-            " coalesce(dc.gb_civil_code, dc.civil_code) as civil_code,\n" +
-            " coalesce(dc.gb_block, dc.block) as block,\n" +
-            " coalesce(dc.gb_address, dc.address) as address,\n" +
-            " coalesce(dc.gb_parental, dc.parental) as parental,\n" +
-            " coalesce(dc.gb_parent_id, dc.parent_id) as parent_id,\n" +
-            " coalesce(dc.gb_safety_way, dc.safety_way) as safety_way,\n" +
-            " coalesce(dc.gb_register_way, dc.register_way) as register_way,\n" +
-            " coalesce(dc.gb_cert_num, dc.cert_num) as cert_num,\n" +
-            " coalesce(dc.gb_certifiable, dc.certifiable) as certifiable,\n" +
-            " coalesce(dc.gb_err_code, dc.err_code) as err_code,\n" +
-            " coalesce(dc.gb_end_time, dc.end_time) as end_time,\n" +
-            " coalesce(dc.gb_secrecy, dc.secrecy) as secrecy,\n" +
-            " coalesce(dc.gb_ip_address, dc.ip_address) as ip_address,\n" +
-            " coalesce(dc.gb_port, dc.port) as port,\n" +
-            " coalesce(dc.gb_password, dc.password) as password,\n" +
-            " coalesce(dc.gb_ptz_type, dc.ptz_type) as ptz_type,\n" +
-            " coalesce(dc.gb_status, dc.status) as status,\n" +
-            " coalesce(dc.gb_longitude, dc.longitude) as longitude,\n" +
-            " coalesce(dc.gb_latitude, dc.latitude) as latitude,\n" +
-            " coalesce(dc.gb_business_group_id, dc.business_group_id) as business_group_id " +
-            " from " +
-            " wvp_device_channel dc " +
-            " LEFT JOIN wvp_device de ON  dc.data_device_id = de.id " +
-            " WHERE dc.data_type = 1 " +
-            " <if test='deviceId != null'> AND de.device_id = #{deviceId} </if> " +
-            " <if test='query != null'> AND (dc.device_id LIKE concat('%',#{query},'%') OR dc.name LIKE concat('%',#{query},'%') OR dc.name LIKE concat('%',#{query},'%'))</if> " +
-            " <if test='parentChannelId != null'> AND dc.parent_id=#{parentChannelId} </if> " +
-            " <if test='online == true' > AND dc.status='ON'</if>" +
-            " <if test='online == false' > AND dc.status='OFF'</if>" +
-            " <if test='hasSubChannel == true' >  AND dc.sub_count > 0 </if>" +
-            " <if test='hasSubChannel == false' >  AND dc.sub_count = 0 </if>" +
-            "<if test='channelIds != null'> AND dc.device_id in <foreach item='item' index='index' collection='channelIds' open='(' separator=',' close=')'>" +
-            "#{item} " +
-            "</foreach> </if>" +
-            "ORDER BY dc.device_id ASC" +
-            " </script>"})
-    List<DeviceChannelExtend> queryChannelsWithDeviceInfo( @Param("deviceId") String deviceId, @Param("parentChannelId") String parentChannelId, @Param("query") String query, @Param("hasSubChannel") Boolean hasSubChannel, @Param("online") Boolean online, @Param("channelIds") List<String> channelIds);
+    @SelectProvider(type = DeviceChannelProvider.class, method = "queryChannelsWithDeviceInfo")
+    List<DeviceChannelExtend> queryChannelsWithDeviceInfo(
+            @Param("deviceId") String deviceId,
+            @Param("parentChannelId") String parentChannelId,
+            @Param("query") String query,
+            @Param("hasSubChannel") Boolean hasSubChannel,
+            @Param("online") Boolean online,
+            @Param("channelIds") List<String> channelIds,
+            @Param("scope") VideoScopeQuery scope);
 
     @Update(value = {"UPDATE wvp_device_channel SET stream_id=#{streamId} WHERE id=#{channelId}"})
     void startPlay(@Param("channelId") Integer channelId, @Param("streamId") String streamId);

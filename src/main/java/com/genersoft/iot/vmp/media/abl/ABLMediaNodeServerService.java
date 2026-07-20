@@ -333,8 +333,10 @@ public class ABLMediaNodeServerService implements IMediaNodeServerService {
         if (inviteInfo == null || inviteInfo.getStreamInfo() == null) {
             return;
         }
-        List<CloudRecordItem> cloudRecordItemList = cloudRecordServiceMapper.getList(null, event.getApp(), event.getStream(),
-                null, null, null, null, null, null);
+        List<CloudRecordItem> cloudRecordItemList =
+                cloudRecordServiceMapper.getListForInternalMaintenance(
+                        null, event.getApp(), event.getStream(),
+                        null, null, null, null, null, null);
         if (cloudRecordItemList.isEmpty()) {
             return;
         }
@@ -348,18 +350,17 @@ public class ABLMediaNodeServerService implements IMediaNodeServerService {
         if (ablResult.getUrl() == null) {
             return;
         }
-        String download = ablResult.getUrl().getDownload();
-        DownloadFileInfo downloadFileInfo = new DownloadFileInfo();
-        downloadFileInfo.setHttpPath(download);
-        downloadFileInfo.setHttpsPath(download);
-        inviteInfo.getStreamInfo().setDownLoadFilePath(downloadFileInfo);
+        inviteInfo.getStreamInfo().setDownloadRecordId(
+                cloudRecordItemList.get(0).getId());
         inviteStreamService.updateInviteInfo(inviteInfo);
     }
 
     @Override
     public Long updateDownloadProcess(MediaServer mediaServer, String app, String stream) {
-        List<CloudRecordItem> list = cloudRecordServiceMapper.getList(null, app, stream, null,
-                null, null, null, null, null);
+        List<CloudRecordItem> list =
+                cloudRecordServiceMapper.getListForInternalMaintenance(
+                        null, app, stream, null,
+                        null, null, null, null, null);
         if (list.isEmpty()) {
             return null;
         }

@@ -6,12 +6,11 @@ const serverIdKey = 'wvp_server_id'
 const expires = 30
 
 export function getToken() {
-  console.log('Getting token...')
   return Cookies.get(TokenKey)
 }
 
 export function setToken(token) {
-  return Cookies.set(TokenKey, token, {expires: expires})
+  return Cookies.set(TokenKey, token, { expires: expires })
 }
 
 export function removeToken() {
@@ -23,7 +22,7 @@ export function getName() {
 }
 
 export function setName(name) {
-  return Cookies.set(NameKey, name, {expires: expires})
+  return Cookies.set(NameKey, name, { expires: expires })
 }
 
 export function removeName() {
@@ -35,7 +34,7 @@ export function getServerId() {
 }
 
 export function setServerId(serverId) {
-  return Cookies.set(serverIdKey, serverId, {expires: expires})
+  return Cookies.set(serverIdKey, serverId, { expires: expires })
 }
 
 export function removeServerId() {

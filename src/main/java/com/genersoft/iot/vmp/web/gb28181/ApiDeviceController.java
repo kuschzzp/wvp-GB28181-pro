@@ -2,6 +2,8 @@ package com.genersoft.iot.vmp.web.gb28181;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.genersoft.iot.vmp.authorization.AuthorizationFacade;
+import com.genersoft.iot.vmp.authorization.video.GbChannelAccessAuthorizer;
 import com.genersoft.iot.vmp.gb28181.bean.Device;
 import com.genersoft.iot.vmp.gb28181.bean.Preset;
 import com.genersoft.iot.vmp.gb28181.service.IDeviceChannelService;
@@ -15,6 +17,7 @@ import com.github.pagehelper.PageInfo;
 import io.swagger.v3.oas.annotations.Hidden;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,7 +36,14 @@ import java.util.*;
 @RestController
 @RequestMapping(value = "/api/v1/device")
 @Hidden
+@PreAuthorize("@authz.check('video:device:list')")
 public class ApiDeviceController {
+
+    private static final String DEVICE_LIST_PERMISSION = "video:device:list";
+    private static final String PTZ_PRESET_PERMISSION = "video:ptz:preset";
+
+    @Autowired
+    private GbChannelAccessAuthorizer channelAccessAuthorizer;
 
     @Autowired
     private SIPCommander cmder;
@@ -45,6 +55,9 @@ public class ApiDeviceController {
 
     @Autowired
     private IDeviceService deviceService;
+
+    @Autowired
+    private AuthorizationFacade authorizationFacade;
 
 
     /**
@@ -68,10 +81,17 @@ public class ApiDeviceController {
         JSONObject result = new JSONObject();
         List<Device> devices;
         if (start == null || limit ==null) {
-            devices = deviceService.getAllByStatus(online);
+            devices = deviceService.getAllByStatus(
+                    online,
+                    authorizationFacade.resolveVideoScopeQuery(DEVICE_LIST_PERMISSION));
             result.put("DeviceCount", devices.size());
         }else {
-            PageInfo<Device> deviceList = deviceService.getAll(start/limit, limit,null, online);
+            PageInfo<Device> deviceList = deviceService.getAll(
+                    start / limit,
+                    limit,
+                    null,
+                    online,
+                    authorizationFacade.resolveVideoScopeQuery(DEVICE_LIST_PERMISSION));
             result.put("DeviceCount", deviceList.getTotal());
             devices = deviceList.getList();
         }
@@ -118,7 +138,12 @@ public class ApiDeviceController {
             String[] split = code.trim().split(",");
             channelIds = Arrays.asList(split);
         }
-        List<DeviceChannelExtend> allDeviceChannelList = channelService.queryChannelExtendsByDeviceId(serial,channelIds,online);
+        List<DeviceChannelExtend> allDeviceChannelList =
+                channelService.queryChannelExtendsByDeviceId(
+                        serial,
+                        channelIds,
+                        online,
+                        authorizationFacade.resolveVideoScopeQuery(DEVICE_LIST_PERMISSION));
         if (start == null || limit ==null) {
             deviceChannels = allDeviceChannelList;
             result.put("ChannelCount", deviceChannels.size());
@@ -182,12 +207,16 @@ public class ApiDeviceController {
      * @param timeout 超时时间(秒) 默认值: 15
      * @return
      */
+    @PreAuthorize("@authz.check('video:ptz:preset')")
     @GetMapping(value = "/fetchpreset")
-    private DeferredResult<WVPResult<Object>>  list(String serial,
+    public DeferredResult<WVPResult<Object>>  list(String serial,
                       @RequestParam(required = false)Integer channel,
                       @RequestParam(required = false)String code,
                       @RequestParam(required = false)Boolean fill,
                       @RequestParam(required = false)Integer timeout){
+
+        channelAccessAuthorizer.requireGbChannel(
+                PTZ_PRESET_PERMISSION, serial, code);
 
         if (log.isDebugEnabled()) {
             log.debug("<模拟接口> 获取下级通道预置位 API调用，deviceId：{} ，channel：{} ，code：{} ，fill：{} ，timeout：{} ",

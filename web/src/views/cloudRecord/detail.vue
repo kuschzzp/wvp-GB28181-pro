@@ -34,6 +34,7 @@
                   {{ getFileShowName(item) }}
                 </el-tag>
                 <a
+                  v-if="$auth.hasPermi(['video:cloud-record:download'])"
                   class="el-icon-download"
                   style="color: #409EFF;font-weight: 600;margin-left: 10px;"
                   target="_blank"
@@ -46,8 +47,22 @@
         </div>
       </div>
       <div id="playerBox" :style="playBoxStyle">
-        <cloudRecordPlayer ref="cloudRecordPlayer" :showListCallback="sidebarControl" :showNextCallback="playNext"
-                             :showLastCallback="playLast" :lastDiable="lastBtnDiable" :nextDiable="nextBtnDiable" ></cloudRecordPlayer>
+        <cloudRecordPlayer
+          v-if="$auth.hasPermi(['video:cloud-record:play'])"
+          ref="cloudRecordPlayer"
+          :showListCallback="sidebarControl"
+          :showNextCallback="playNext"
+          :showLastCallback="playLast"
+          :lastDiable="lastBtnDiable"
+          :nextDiable="nextBtnDiable"
+        />
+        <el-alert
+          v-else
+          title="当前账号可以查看录像列表，但没有云端录像播放权限。"
+          type="info"
+          :closable="false"
+          show-icon
+        />
       </div>
     </div>
   </div>
@@ -59,6 +74,7 @@ import moment from 'moment'
 import momentDurationFormatSetup from 'moment-duration-format'
 import screenfull from 'screenfull'
 import cloudRecordPlayer from './player.vue'
+import { openDownloadTicket } from '@/utils/downloadTicket'
 
 momentDurationFormatSetup(moment)
 
@@ -162,6 +178,7 @@ export default {
       this.$refs.recordVideoPlayer.screenshot()
     },
     playLast() {
+      if (!this.$auth.hasPermi(['video:cloud-record:play'])) return
       // 播放上一个
       if (this.chooseFileIndex === 0) {
         return
@@ -169,6 +186,7 @@ export default {
       this.chooseFile(this.chooseFileIndex - 1)
     },
     playNext() {
+      if (!this.$auth.hasPermi(['video:cloud-record:play'])) return
       // 播放上一个
       if (this.chooseFileIndex === this.detailFiles.length - 1) {
         this.nextBtnDiable = true
@@ -185,6 +203,7 @@ export default {
       this.$refs.cloudRecordPlayer.stopPLay()
     },
     play() {
+      if (!this.$auth.hasPermi(['video:cloud-record:play'])) return
       if (this.$refs.recordVideoPlayer.loaded) {
         this.$refs.recordVideoPlayer.unPause()
       } else {
@@ -208,7 +227,7 @@ export default {
       this.isFullScreen = true
     },
     dateChange() {
-      this.$refs.cloudRecordPlayer.stopPLay()
+      if (this.$refs.cloudRecordPlayer) this.$refs.cloudRecordPlayer.stopPLay()
       this.streamInfo = null
       this.chooseFileIndex = null
       this.detailFiles = []
@@ -269,10 +288,12 @@ export default {
         })
     },
     chooseFile(index) {
+      if (!this.$auth.hasPermi(['video:cloud-record:play'])) return
       this.chooseFileIndex = index
       this.playRecord()
     },
     playRecord() {
+      if (!this.$auth.hasPermi(['video:cloud-record:play'])) return
       this.$refs.cloudRecordPlayer.stopPLay()
       this.$store.dispatch('cloudRecord/loadRecord', {
         app: this.app,
@@ -295,16 +316,10 @@ export default {
         })
     },
     downloadFile(file) {
+      if (!this.$auth.hasPermi(['video:cloud-record:download'])) return
       this.$store.dispatch('cloudRecord/getPlayPath', file.id)
         .then(data => {
-          const link = document.createElement('a')
-          link.target = '_blank'
-          if (location.protocol === 'https:') {
-            link.href = data.httpsPath + '&save_name=' + file.fileName
-          } else {
-            link.href = data.httpPath + '&save_name=' + file.fileName
-          }
-          link.click()
+          openDownloadTicket(data)
         })
         .catch((error) => {
           console.log(error)

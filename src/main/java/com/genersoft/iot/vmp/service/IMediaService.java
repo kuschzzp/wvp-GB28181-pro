@@ -9,9 +9,14 @@ import com.genersoft.iot.vmp.media.bean.MediaServer;
 public interface IMediaService {
 
     /**
-     * 播放鉴权
+     * Audit-only compatibility for an ABL networkType that has not yet been
+     * mapped. New external playback must use PlayTicketService.
      */
-    boolean authenticatePlay(String app, String stream, String callId);
+    @Deprecated(forRemoval = true)
+    boolean authenticateLegacyPlayInAudit(
+            String app,
+            String stream,
+            String callId);
 
     ResultForOnPublish authenticatePublish(MediaServer mediaServer, String app, String stream, String params);
 

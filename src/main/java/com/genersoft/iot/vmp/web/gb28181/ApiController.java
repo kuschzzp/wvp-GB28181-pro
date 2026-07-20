@@ -5,10 +5,10 @@ import com.genersoft.iot.vmp.conf.SipConfig;
 import io.swagger.v3.oas.annotations.Hidden;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.ResponseBody;
 
 /**
  * API兼容：系统接口
@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 @Slf4j
 @RequestMapping(value = "/api/v1")
 @Hidden
+@PreAuthorize("@authz.check('operations:system:view')")
 public class ApiController {
 
     @Autowired
@@ -24,7 +25,7 @@ public class ApiController {
 
 
     @GetMapping("/getserverinfo")
-    private JSONObject getserverinfo(){
+    public JSONObject getserverinfo(){
         JSONObject result = new JSONObject();
         result.put("Authorization","ceshi");
         result.put("Hardware","");
@@ -51,7 +52,7 @@ public class ApiController {
     }
 
     @GetMapping(value = "/userinfo")
-    private JSONObject userinfo(){
+    public JSONObject userinfo(){
 //        JSONObject result = new JSONObject();
 //        result.put("ID","ceshi");
 //        result.put("Hardware","");
@@ -77,30 +78,4 @@ public class ApiController {
         return null;
     }
 
-    /**
-     *  系统接口 - 登录
-     * @param username 用户名
-     * @param password 密码(经过md5加密,32位长度,不带中划线,不区分大小写)
-     * @return
-     */
-    @GetMapping(value = "/login")
-    @ResponseBody
-    private JSONObject login(String username,String password ){
-        if (log.isDebugEnabled()) {
-            log.debug(String.format("模拟接口> 登录 API调用，username：%s ，password：%s ",
-                    username, password));
-        }
-
-        JSONObject result = new JSONObject();
-        result.put("CookieToken","ynBDDiKMg");
-        result.put("URLToken","MOBkORkqnrnoVGcKIAHXppgfkNWRdV7utZSkDrI448Q.oxNjAxNTM4NDk3LCJwIjoiZGJjODg5NzliNzVj" +
-                "Nzc2YmU5MzBjM2JjNjg1ZWFiNGI5ZjhhN2Y0N2RlZjg3NWUyOTJkY2VkYjkwYmEwMTA0NyIsInQiOjE2MDA5MzM2OTcsInUiOiI" +
-                "4ODlkZDYyM2ViIn0eyJlIj.GciOiJIUzI1NiIsInR5cCI6IkpXVCJ9eyJhb");
-        result.put("TokenTimeout",604800);
-        result.put("AuthToken","MOBkORkqnrnoVGcKIAHXppgfkNWRdV7utZSkDrI448Q.oxNjAxNTM4NDk3LCJwIjoiZGJjODg5NzliNzVj" +
-                "Nzc2YmU5MzBjM2JjNjg1ZWFiNGI5ZjhhN2Y0N2RlZjg3NWUyOTJkY2VkYjkwYmEwMTA0NyIsInQiOjE2MDA5MzM2OTcsInUiOiI" +
-                "4ODlkZDYyM2ViIn0eyJlIj.GciOiJIUzI1NiIsInR5cCI6IkpXVCJ9eyJhb");
-        result.put("Token","ynBDDiKMg");
-        return result;
-    }
 }

@@ -2,6 +2,10 @@ package com.genersoft.iot.vmp.gb28181.service.impl;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.genersoft.iot.vmp.authorization.video.VideoResourceLifecycleService;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceRef;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceType;
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.common.CommonCallback;
 import com.genersoft.iot.vmp.common.enums.ChannelDataType;
 import com.genersoft.iot.vmp.conf.UserSetting;
@@ -123,6 +127,9 @@ public class DeviceServiceImpl implements IDeviceService {
 
     @Autowired
     private DeviceStatusManager deviceStatusManager;
+
+    @Autowired
+    private VideoResourceLifecycleService resourceLifecycleService;
 
     private Device getDeviceByDeviceIdFromDb(String deviceId) {
         return deviceMapper.getDeviceByDeviceId(deviceId);
@@ -794,8 +801,9 @@ public class DeviceServiceImpl implements IDeviceService {
     }
 
     @Override
-    public List<Device> getAllByStatus(Boolean status) {
-        return deviceMapper.getDevices(ChannelDataType.GB28181, status);
+    public List<Device> getAllByStatus(Boolean status, VideoScopeQuery scope) {
+        Objects.requireNonNull(scope, "scope must not be null");
+        return deviceMapper.getDeviceList(ChannelDataType.GB28181, null, status, scope);
     }
 
     @Override
@@ -906,6 +914,21 @@ public class DeviceServiceImpl implements IDeviceService {
     public boolean delete(String deviceId) {
         Device device = getDeviceByDeviceIdFromDb(deviceId);
         Assert.notNull(device, "未找到设备");
+        List<CommonGBChannel> commonGBChannels =
+                commonGBChannelMapper.queryByDataTypeAndDeviceIds(
+                        ChannelDataType.GB28181, List.of(device.getId()));
+        LinkedHashSet<VideoResourceRef> resources = new LinkedHashSet<>();
+        resources.add(new VideoResourceRef(
+                VideoResourceType.GB_DEVICE, device.getId()));
+        if (commonGBChannels != null) {
+            commonGBChannels.stream()
+                    .filter(Objects::nonNull)
+                    .filter(channel -> channel.getGbId() > 0)
+                    .map(channel -> new VideoResourceRef(
+                            VideoResourceType.CHANNEL, channel.getGbId()))
+                    .forEach(resources::add);
+        }
+        resourceLifecycleService.removeAll(resources);
         if (subscribeTaskRunner.containsKey(SubscribeTaskForCatalog.getKey(device))) {
             removeCatalogSubscribe(device, null);
         }
@@ -918,8 +941,6 @@ public class DeviceServiceImpl implements IDeviceService {
         if (deviceStatusManager.contains(deviceId)) {
             deviceStatusManager.remove(deviceId);
         }
-        List<CommonGBChannel> commonGBChannels = commonGBChannelMapper.queryByDataTypeAndDeviceIds(1, List.of(device.getId()));
-
         try {
             // 发送catalog
             eventPublisher.channelEventPublish(commonGBChannels, ChannelEvent.ChannelEventMessageType.DEL);
@@ -936,10 +957,8 @@ public class DeviceServiceImpl implements IDeviceService {
     }
 
     @Override
-    public ResourceBaseInfo getOverview() {
-        List<Device> onlineDevices = deviceMapper.getOnlineDevices();
-        List<Device> all = deviceMapper.getAll();
-        return new ResourceBaseInfo(all.size(), onlineDevices.size());
+    public ResourceBaseInfo getOverview(VideoScopeQuery scope) {
+        return deviceMapper.getOverview(scope);
     }
 
     @Override
@@ -948,14 +967,21 @@ public class DeviceServiceImpl implements IDeviceService {
     }
 
     @Override
-    public PageInfo<Device> getAll(int page, int count, String query, Boolean status) {
+    public PageInfo<Device> getAll(
+            int page,
+            int count,
+            String query,
+            Boolean status,
+            VideoScopeQuery scope) {
+        Objects.requireNonNull(scope, "scope must not be null");
         PageHelper.startPage(page, count);
         if (query != null) {
             query = query.replaceAll("/", "//")
                     .replaceAll("%", "/%")
                     .replaceAll("_", "/_");
         }
-        List<Device> all = deviceMapper.getDeviceList(ChannelDataType.GB28181, query, status);
+        List<Device> all = deviceMapper.getDeviceList(
+                ChannelDataType.GB28181, query, status, scope);
         return new PageInfo<>(all);
     }
 

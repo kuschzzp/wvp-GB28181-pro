@@ -1,6 +1,10 @@
 package com.genersoft.iot.vmp.streamPush.service.impl;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.genersoft.iot.vmp.authorization.video.VideoResourceLifecycleService;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceRef;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceType;
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.common.StreamInfo;
 import com.genersoft.iot.vmp.common.enums.MediaStreamUtil;
 import com.genersoft.iot.vmp.conf.UserSetting;
@@ -60,6 +64,9 @@ public class StreamPushServiceImpl implements IStreamPushService {
 
     @Autowired
     private IGbChannelService gbChannelService;
+
+    @Autowired
+    private VideoResourceLifecycleService resourceLifecycleService;
 
     /**
      * 流到来的处理
@@ -174,14 +181,22 @@ public class StreamPushServiceImpl implements IStreamPushService {
     }
 
     @Override
-    public PageInfo<StreamPush> getPushList(Integer page, Integer count, String query, Boolean pushing, String mediaServerId) {
+    public PageInfo<StreamPush> getPushList(
+            Integer page,
+            Integer count,
+            String query,
+            Boolean pushing,
+            String mediaServerId,
+            VideoScopeQuery scope) {
+        Objects.requireNonNull(scope, "scope must not be null");
         PageHelper.startPage(page, count);
         if (query != null) {
             query = query.replaceAll("/", "//")
                     .replaceAll("%", "/%")
                     .replaceAll("_", "/_");
         }
-        List<StreamPush> all = streamPushMapper.selectAll(query, pushing, mediaServerId);
+        List<StreamPush> all = streamPushMapper.selectAll(
+                query, pushing, mediaServerId, scope);
         return new PageInfo<>(all);
     }
 
@@ -230,6 +245,7 @@ public class StreamPushServiceImpl implements IStreamPushService {
             log.info("[删除推流]失败， 不存在 app: {}, stream: {}, ", app, stream);
             return;
         }
+        resourceLifecycleService.removeAll(resourceRefs(streamPush));
         if (streamPush.isPushing()) {
             stop(streamPush);
         }
@@ -410,7 +426,18 @@ public class StreamPushServiceImpl implements IStreamPushService {
             }
         }
         // 移除没有GBId的推流
-        streamPushMapper.deleteWithoutGBId(mediaServer.getId());
+        List<StreamPush> unlinkedPushes = streamPushItems.stream()
+                .filter(Objects::nonNull)
+                .filter(streamPush -> streamPush.getGbId() <= 0)
+                .toList();
+        if (!unlinkedPushes.isEmpty()) {
+            resourceLifecycleService.removeAll(unlinkedPushes.stream()
+                    .map(streamPush -> new VideoResourceRef(
+                            VideoResourceType.STREAM_PUSH,
+                            streamPush.getId()))
+                    .toList());
+            streamPushMapper.batchDel(unlinkedPushes);
+        }
         // 发送流停止消息
         String type = "PUSH";
         // 发送redis消息
@@ -450,7 +477,8 @@ public class StreamPushServiceImpl implements IStreamPushService {
     public void allOfflineForRedisMsg() {
         String serverId = redisCatchStorage.chooseOneServer(null);
         boolean permission = userSetting.getServerId().equals(serverId);
-        List<StreamPush> streamPushList = streamPushMapper.selectAll(null, null, null);
+        List<StreamPush> streamPushList =
+                streamPushMapper.selectAllForInternalMaintenance(null, null, null);
         if (streamPushList.isEmpty()) {
             return;
         }
@@ -504,11 +532,8 @@ public class StreamPushServiceImpl implements IStreamPushService {
     }
 
     @Override
-    public ResourceBaseInfo getOverview() {
-        int total = streamPushMapper.getAllCount();
-        int online = streamPushMapper.getAllPushing(userSetting.getUsePushingAsStatus());
-
-        return new ResourceBaseInfo(total, online);
+    public ResourceBaseInfo getOverview(VideoScopeQuery scope) {
+        return streamPushMapper.getOverview(scope);
     }
 
     @Override
@@ -585,6 +610,7 @@ public class StreamPushServiceImpl implements IStreamPushService {
         if (streamPush == null) {
             return 0;
         }
+        resourceLifecycleService.removeAll(resourceRefs(streamPush));
         if(streamPush.isPushing()) {
             MediaServer mediaServer = mediaServerService.getOne(streamPush.getMediaServerId());
             mediaServerService.closeStreams(mediaServer, streamPush.getApp(), streamPush.getStream());
@@ -603,12 +629,31 @@ public class StreamPushServiceImpl implements IStreamPushService {
             return;
         }
         Set<Integer> channelIds = new HashSet<>();
-        streamPushList.stream().forEach(streamPush -> {
-            if (streamPush.getGbDeviceId() != null) {
+        LinkedHashSet<VideoResourceRef> resources = new LinkedHashSet<>();
+        streamPushList.forEach(streamPush -> {
+            resources.add(new VideoResourceRef(
+                    VideoResourceType.STREAM_PUSH, streamPush.getId()));
+            if (streamPush.getGbId() > 0) {
                 channelIds.add(streamPush.getGbId());
+                resources.add(new VideoResourceRef(
+                        VideoResourceType.CHANNEL, streamPush.getGbId()));
             }
         });
+        resourceLifecycleService.removeAll(resources);
         streamPushMapper.batchDel(streamPushList);
-        gbChannelService.delete(channelIds);
+        if (!channelIds.isEmpty()) {
+            gbChannelService.delete(channelIds);
+        }
+    }
+
+    private Set<VideoResourceRef> resourceRefs(StreamPush streamPush) {
+        LinkedHashSet<VideoResourceRef> resources = new LinkedHashSet<>();
+        resources.add(new VideoResourceRef(
+                VideoResourceType.STREAM_PUSH, streamPush.getId()));
+        if (streamPush.getGbId() > 0) {
+            resources.add(new VideoResourceRef(
+                    VideoResourceType.CHANNEL, streamPush.getGbId()));
+        }
+        return Set.copyOf(resources);
     }
 }

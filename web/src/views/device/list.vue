@@ -25,8 +25,8 @@
         </el-select>
       </el-form-item>
       <el-form-item>
-        <el-button icon="el-icon-plus" style="margin-right: 1rem;" type="primary" @click="add">添加设备</el-button>
-        <el-button icon="el-icon-info" style="margin-right: 1rem;" @click="showInfo()">接入信息
+        <el-button v-hasPermi="['video:device:add']" icon="el-icon-plus" style="margin-right: 1rem;" type="primary" @click="add">添加设备</el-button>
+        <el-button v-hasPermi="['operations:system:view']" icon="el-icon-info" style="margin-right: 1rem;" @click="showInfo()">接入信息
         </el-button>
       </el-form-item>
       <el-form-item style="float: right;">
@@ -63,6 +63,7 @@
             size="mini"
             placeholder="请选择"
             style="width: 120px"
+            :disabled="!$auth.hasPermi(['video:device:edit'])"
             @change="transportChange(scope.row)"
           >
             <el-option key="UDP" label="UDP" value="UDP" />
@@ -96,16 +97,19 @@
           <el-checkbox
             label="目录"
             :checked="scope.row.subscribeCycleForCatalog > 0"
+            :disabled="!$auth.hasPermi(['video:device:sync'])"
             @change="(e)=>subscribeForCatalog(scope.row.id, e)"
           />
           <el-checkbox
             label="位置"
             :checked="scope.row.subscribeCycleForMobilePosition > 0"
+            :disabled="!$auth.hasPermi(['video:position:subscribe'])"
             @change="(e)=>subscribeForMobilePosition(scope.row.id, e)"
           />
           <el-checkbox
             label="报警"
             :checked="scope.row.subscribeCycleForAlarm > 0"
+            :disabled="!$auth.hasPermi(['video:device:config'])"
             @change="(e)=>subscribeForAlarm(scope.row.id, e)"
           />
         </template>
@@ -113,6 +117,7 @@
       <el-table-column label="统计" min-width="140">
         <template v-slot:default="scope">
           <el-button
+            v-hasPermi="['video:device:sync']"
             type="text"
             size="mini"
             :disabled="scope.row.online===0"
@@ -143,7 +148,7 @@
             @mouseover="getTooltipContent(scope.row.deviceId)"
           >刷新
           </el-button>
-          <el-divider direction="vertical" />
+          <el-divider v-hasPermi="['video:device:sync']" direction="vertical" />
           <el-button
             type="text"
             size="medium"
@@ -151,10 +156,10 @@
             @click="showChannelList(scope.row)"
           >通道
           </el-button>
-          <el-divider direction="vertical" />
-          <el-button size="medium" icon="el-icon-edit" type="text" @click="edit(scope.row)">编辑</el-button>
-          <el-divider direction="vertical" />
-          <el-button size="medium" type="text" style="color: #f56c6c" @click="deleteDevice(scope.row)">删除</el-button>
+          <el-divider v-hasPermi="['video:device:edit']" direction="vertical" />
+          <el-button v-hasPermi="['video:device:edit']" size="medium" icon="el-icon-edit" type="text" @click="edit(scope.row)">编辑</el-button>
+          <el-divider v-hasPermi="['video:device:remove']" direction="vertical" />
+          <el-button v-hasPermi="['video:device:remove']" size="medium" type="text" style="color: #f56c6c" @click="deleteDevice(scope.row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -333,6 +338,7 @@ export default {
       return result
     },
     transportChange: function(row) {
+      if (!this.$auth.hasPermi(['video:device:edit'])) return
       console.log(`修改传输方式为 ${row.streamMode}：${row.deviceId} `)
       console.log(row.streamMode)
       this.$store.dispatch('device/updateDeviceTransport', [row.deviceId, row.streamMode])
@@ -368,6 +374,7 @@ export default {
     },
 
     subscribeForCatalog: function(data, value) {
+      if (!this.$auth.hasPermi(['video:device:sync'])) return
       this.$store.dispatch('device/subscribeCatalog', {
         id: data,
         cycle: value ? 60 : 0
@@ -384,6 +391,7 @@ export default {
       })
     },
     subscribeForMobilePosition: function(data, value) {
+      if (!this.$auth.hasPermi(['video:position:subscribe'])) return
       this.$store.dispatch('device/subscribeMobilePosition', {
         id: data,
         cycle: value ? 60 : 0,
@@ -401,6 +409,7 @@ export default {
       })
     },
     subscribeForAlarm: function(data, value) {
+      if (!this.$auth.hasPermi(['video:device:config'])) return
       this.$store.dispatch('device/subscribeForAlarm', {
         id: data,
         cycle: value ? 60 : 0

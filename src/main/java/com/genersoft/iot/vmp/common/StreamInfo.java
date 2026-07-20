@@ -2,7 +2,6 @@ package com.genersoft.iot.vmp.common;
 
 import com.genersoft.iot.vmp.media.bean.MediaInfo;
 import com.genersoft.iot.vmp.media.bean.MediaServer;
-import com.genersoft.iot.vmp.service.bean.DownloadFileInfo;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
@@ -83,8 +82,8 @@ public class StreamInfo implements Serializable, Cloneable{
     private Double duration;
     @Schema(description = "进度（录像下载使用）")
     private double progress;
-    @Schema(description = "文件下载地址（录像下载使用）")
-    private DownloadFileInfo downLoadFilePath;
+    @Schema(description = "服务端录像记录ID（仅用于签发下载票据）")
+    private Integer downloadRecordId;
     @Schema(description = "点播请求的callId")
     private String callId;
 

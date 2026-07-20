@@ -1,6 +1,8 @@
 package com.genersoft.iot.vmp.gb28181.controller;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.genersoft.iot.vmp.authorization.AuthorizationFacade;
+import com.genersoft.iot.vmp.authorization.video.GbChannelAccessAuthorizer;
 import com.genersoft.iot.vmp.conf.DynamicTask;
 import com.genersoft.iot.vmp.conf.UserSetting;
 import com.genersoft.iot.vmp.conf.exception.ControllerException;
@@ -14,6 +16,10 @@ import com.genersoft.iot.vmp.gb28181.service.IDeviceService;
 import com.genersoft.iot.vmp.gb28181.service.IInviteStreamService;
 import com.genersoft.iot.vmp.gb28181.transmit.callback.DeferredResultHolder;
 import com.genersoft.iot.vmp.gb28181.transmit.cmd.ISIPCommander;
+import com.genersoft.iot.vmp.media.security.DownloadResourceType;
+import com.genersoft.iot.vmp.media.security.DownloadTicketService;
+import com.genersoft.iot.vmp.media.security.dto.DownloadTicketRequest;
+import com.genersoft.iot.vmp.media.security.dto.DownloadTicketResponse;
 import com.genersoft.iot.vmp.service.redisMsg.IRedisRpcService;
 import com.genersoft.iot.vmp.vmanager.bean.ErrorCode;
 import com.genersoft.iot.vmp.vmanager.bean.WVPResult;
@@ -22,22 +28,16 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.ServletOutputStream;
-import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.io.IOUtils;
 import org.apache.ibatis.annotations.Options;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.MediaType;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.request.async.DeferredResult;
 
-import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
 import java.util.List;
 
 @Tag(name  = "国标设备查询", description = "国标设备查询")
@@ -45,10 +45,28 @@ import java.util.List;
 @Slf4j
 @RestController
 @RequestMapping("/api/device/query")
+@PreAuthorize("@authz.check('video:device:list')")
 public class DeviceQuery {
 
+	private static final String DEVICE_LIST_PERMISSION = "video:device:list";
+	private static final String DEVICE_SYNC_PERMISSION = "video:device:sync";
+	private static final String DEVICE_REMOVE_PERMISSION = "video:device:remove";
+	private static final String DEVICE_EDIT_PERMISSION = "video:device:edit";
+	private static final String DEVICE_CONFIG_PERMISSION = "video:device:config";
+	private static final String CHANNEL_EDIT_PERMISSION = "video:channel:edit";
+	private static final String POSITION_SUBSCRIBE_PERMISSION =
+			"video:position:subscribe";
 	@Autowired
 	private IDeviceChannelService deviceChannelService;
+
+	@Autowired
+	private AuthorizationFacade authorizationFacade;
+
+	@Autowired
+	private GbChannelAccessAuthorizer channelAccessAuthorizer;
+
+	@Autowired
+	private DownloadTicketService downloadTicketService;
 
 	@Autowired
 	private IInviteStreamService inviteStreamService;
@@ -75,7 +93,8 @@ public class DeviceQuery {
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
 	@GetMapping("/devices/{deviceId}")
 	public Device devices(@PathVariable String deviceId){
-
+		channelAccessAuthorizer.requireGbDeviceHidden(
+				DEVICE_LIST_PERMISSION, deviceId);
 		return deviceService.getDeviceByDeviceId(deviceId);
 	}
 
@@ -91,7 +110,12 @@ public class DeviceQuery {
 		if (ObjectUtils.isEmpty(query)){
 			query = null;
 		}
-		return deviceService.getAll(page, count, query, status);
+		return deviceService.getAll(
+				page,
+				count,
+				query,
+				status,
+				authorizationFacade.resolveVideoScopeQuery(DEVICE_LIST_PERMISSION));
 	}
 
 
@@ -112,7 +136,14 @@ public class DeviceQuery {
 			query = null;
 		}
 
-		return deviceChannelService.queryChannelsByDeviceId(deviceId, query, channelType, online, page, count);
+		return deviceChannelService.queryChannelsByDeviceId(
+				deviceId,
+				query,
+				channelType,
+				online,
+				page,
+				count,
+				authorizationFacade.resolveVideoScopeQuery(DEVICE_LIST_PERMISSION));
 	}
 
 	@GetMapping("/streams")
@@ -126,14 +157,24 @@ public class DeviceQuery {
 			query = null;
 		}
 
-		return deviceChannelService.queryChannels(query, true, null, null, true, page, count);
+		return deviceChannelService.queryChannels(
+				query,
+				true,
+				null,
+				null,
+				true,
+				page,
+				count,
+				authorizationFacade.resolveVideoScopeQuery(DEVICE_LIST_PERMISSION));
 	}
 
 	@Operation(summary = "同步设备通道", security = @SecurityRequirement(name = JwtUtils.HEADER))
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
+	@PreAuthorize("@authz.check('video:device:sync')")
 	@GetMapping("/devices/{deviceId}/sync")
 	public WVPResult<SyncStatus> devicesSync(@PathVariable String deviceId){
-
+		channelAccessAuthorizer.requireGbDevice(
+				DEVICE_SYNC_PERMISSION, deviceId);
 		if (log.isDebugEnabled()) {
 			log.debug("设备通道信息同步API调用，deviceId：" + deviceId);
 		}
@@ -150,9 +191,11 @@ public class DeviceQuery {
 
 	@Operation(summary = "移除设备", security = @SecurityRequirement(name = JwtUtils.HEADER))
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
+	@PreAuthorize("@authz.check('video:device:remove')")
 	@DeleteMapping("/devices/{deviceId}/delete")
 	public String delete(@PathVariable String deviceId){
-
+		channelAccessAuthorizer.requireGbDevice(
+				DEVICE_REMOVE_PERMISSION, deviceId);
 		if (log.isDebugEnabled()) {
 			log.debug("设备信息删除API调用，deviceId：" + deviceId);
 		}
@@ -178,30 +221,47 @@ public class DeviceQuery {
 												  int page,
 												  int count,
 												  @RequestParam(required = false) String query,
-												  @RequestParam(required = false) Boolean online,
-												  @RequestParam(required = false) Boolean channelType){
-
+				  @RequestParam(required = false) Boolean online,
+											  @RequestParam(required = false) Boolean channelType){
+		channelAccessAuthorizer.requireGbChannelHidden(
+				DEVICE_LIST_PERMISSION, deviceId, channelId);
 		DeviceChannel deviceChannel = deviceChannelService.getOne(deviceId,channelId);
 		if (deviceChannel == null) {
             return new PageInfo<>();
 		}
 
-		return deviceChannelService.getSubChannels(deviceChannel.getDataDeviceId(), channelId, query, channelType, online, page, count);
+		return deviceChannelService.getSubChannels(
+				deviceChannel.getDataDeviceId(),
+				channelId,
+				query,
+				channelType,
+				online,
+				page,
+				count,
+				authorizationFacade.resolveVideoScopeQuery(DEVICE_LIST_PERMISSION));
 	}
 
 	@Operation(summary = "开启/关闭通道的音频", security = @SecurityRequirement(name = JwtUtils.HEADER))
 	@Parameter(name = "channelId", description = "通道的数据库ID", required = true)
 	@Parameter(name = "audio", description = "开启/关闭音频", required = true)
+	@PreAuthorize("@authz.check('video:channel:edit')")
 	@PostMapping("/channel/audio")
 	public void changeAudio(Integer channelId, Boolean audio){
 		Assert.notNull(channelId, "通道的数据库ID不可为NULL");
 		Assert.notNull(audio, "开启/关闭音频不可为NULL");
+		channelAccessAuthorizer.requireChannel(
+				CHANNEL_EDIT_PERMISSION, channelId.longValue());
 		deviceChannelService.changeAudio(channelId, audio);
 	}
 
 	@Operation(summary = "修改通道的码流类型", security = @SecurityRequirement(name = JwtUtils.HEADER))
+	@PreAuthorize("@authz.check('video:channel:edit')")
 	@PostMapping("/channel/stream/identification/update/")
 	public void updateChannelStreamIdentification(DeviceChannel channel){
+		Assert.notNull(channel, "通道不可为NULL");
+		Assert.isTrue(channel.getId() > 0, "通道的数据库ID必须大于零");
+		channelAccessAuthorizer.requireChannel(
+				CHANNEL_EDIT_PERMISSION, channel.getId());
 		deviceChannelService.updateChannelStreamIdentification(channel);
 	}
 	@Operation(summary = "获取单个通道详情", security = @SecurityRequirement(name = JwtUtils.HEADER))
@@ -209,6 +269,8 @@ public class DeviceQuery {
 	@Parameter(name = "channelDeviceId", description = "通道的国标编码", required = true)
 	@GetMapping("/channel/one")
 	public DeviceChannel getChannel(String deviceId, String channelDeviceId){
+		channelAccessAuthorizer.requireGbChannelHidden(
+				DEVICE_LIST_PERMISSION, deviceId, channelDeviceId);
 		return deviceChannelService.getOne(deviceId, channelDeviceId);
 	}
 
@@ -217,11 +279,14 @@ public class DeviceQuery {
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
 	@Parameter(name = "streamMode", description = "数据流传输模式, 取值：" +
 			"UDP（udp传输），TCP-ACTIVE（tcp主动模式），TCP-PASSIVE（tcp被动模式）", required = true)
+	@PreAuthorize("@authz.check('video:device:edit')")
 	@PostMapping("/transport/{deviceId}/{streamMode}")
 	public void updateTransport(@PathVariable String deviceId, @PathVariable String streamMode){
 		Assert.isTrue(streamMode.equalsIgnoreCase("UDP")
 				|| streamMode.equalsIgnoreCase("TCP-ACTIVE")
 				|| streamMode.equalsIgnoreCase("TCP-PASSIVE"), "数据流传输模式, 取值：UDP/TCP-ACTIVE/TCP-PASSIVE");
+		channelAccessAuthorizer.requireGbDevice(
+				DEVICE_EDIT_PERMISSION, deviceId);
 		Device device = deviceService.getDeviceByDeviceId(deviceId);
 		device.setStreamMode(streamMode.toUpperCase());
 		deviceService.updateCustomDevice(device);
@@ -230,6 +295,7 @@ public class DeviceQuery {
 
 	@Operation(summary = "添加设备信息", security = @SecurityRequirement(name = JwtUtils.HEADER))
 	@Parameter(name = "device", description = "设备", required = true)
+	@PreAuthorize("@authz.check('video:device:add')")
 	@PostMapping("/device/add")
 	public void addDevice(@RequestBody Device device){
 
@@ -248,11 +314,14 @@ public class DeviceQuery {
 
 	@Operation(summary = "更新设备信息", security = @SecurityRequirement(name = JwtUtils.HEADER))
 	@Parameter(name = "device", description = "设备", required = true)
+	@PreAuthorize("@authz.check('video:device:edit')")
 	@PostMapping("/device/update")
 	public void updateDevice(@RequestBody Device device){
 		if (device == null || device.getDeviceId() == null || device.getId() <= 0) {
 			throw new ControllerException(ErrorCode.ERROR400);
 		}
+		channelAccessAuthorizer.requireGbDeviceId(
+				DEVICE_EDIT_PERMISSION, device.getId());
 		deviceService.updateCustomDevice(device);
 	}
 
@@ -260,6 +329,8 @@ public class DeviceQuery {
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
 	@GetMapping("/devices/{deviceId}/status")
 	public DeferredResult<WVPResult<String>> deviceStatusApi(@PathVariable String deviceId) {
+		channelAccessAuthorizer.requireGbDeviceHidden(
+				DEVICE_LIST_PERMISSION, deviceId);
 		if (log.isDebugEnabled()) {
 			log.debug("设备状态查询API调用");
 		}
@@ -293,6 +364,8 @@ public class DeviceQuery {
 														@RequestParam(required = false) String alarmType,
 														@RequestParam(required = false) String startTime,
 														@RequestParam(required = false) String endTime) {
+		channelAccessAuthorizer.requireGbDeviceHidden(
+				DEVICE_LIST_PERMISSION, deviceId);
 		if (log.isDebugEnabled()) {
 			log.debug("设备报警查询API调用");
 		}
@@ -313,6 +386,8 @@ public class DeviceQuery {
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
 	@GetMapping("/info")
 	public DeferredResult<WVPResult<Object>> deviceInfo(String deviceId) {
+		channelAccessAuthorizer.requireGbDeviceHidden(
+				DEVICE_LIST_PERMISSION, deviceId);
 		if (log.isDebugEnabled()) {
 			log.debug("设备信息查询API调用");
 		}
@@ -336,6 +411,8 @@ public class DeviceQuery {
 	@Operation(summary = "获取通道同步进度（此接口保留仅作为兼容，后续将移除，请迁移至 /sync_status?deviceId=）", security = @SecurityRequirement(name = JwtUtils.HEADER))
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
 	public WVPResult<SyncStatus> getSyncStatusInPath(@PathVariable String deviceId) {
+		channelAccessAuthorizer.requireGbDeviceHidden(
+				DEVICE_LIST_PERMISSION, deviceId);
 		SyncStatus channelSyncStatus = deviceService.getChannelSyncStatus(deviceId);
 		WVPResult<SyncStatus> wvpResult = new WVPResult<>();
 		if (channelSyncStatus == null) {
@@ -366,6 +443,8 @@ public class DeviceQuery {
     @Operation(summary = "获取通道同步进度", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "deviceId", description = "设备国标编号", required = true)
     public WVPResult<SyncStatus> getSyncStatus(String deviceId) {
+		channelAccessAuthorizer.requireGbDeviceHidden(
+				DEVICE_LIST_PERMISSION, deviceId);
         SyncStatus channelSyncStatus = deviceService.getChannelSyncStatus(deviceId);
         WVPResult<SyncStatus> wvpResult = new WVPResult<>();
         if (channelSyncStatus == null) {
@@ -394,41 +473,48 @@ public class DeviceQuery {
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
 	@Parameter(name = "channelId", description = "通道国标编号", required = true)
 	@Parameter(name = "mark", description = "标识", required = false)
-	public void getSnap(HttpServletResponse resp, @PathVariable String deviceId, @PathVariable String channelId, @RequestParam(required = false) String mark) {
-
-		try {
-			final InputStream in = Files.newInputStream(new File("snap" + File.separator + deviceId + "_" + channelId + (mark == null? ".jpg": ("_" + mark + ".jpg"))).toPath());
-			resp.setContentType(MediaType.IMAGE_PNG_VALUE);
-			ServletOutputStream outputStream = resp.getOutputStream();
-			IOUtils.copy(in, resp.getOutputStream());
-			in.close();
-			outputStream.close();
-		} catch (IOException e) {
-			resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
+	public DownloadTicketResponse getSnap(
+			@PathVariable String deviceId,
+			@PathVariable String channelId,
+			@RequestParam(required = false) String mark) {
+		if (mark != null && !mark.isBlank()) {
+			throw new IllegalArgumentException("快照标识参数已停用");
 		}
+		long resourceId = channelAccessAuthorizer.requireGbChannelHidden(
+				DEVICE_LIST_PERMISSION, deviceId, channelId).id();
+		return downloadTicketService.issue(DownloadTicketRequest.single(
+				DownloadResourceType.GB_SNAPSHOT, resourceId));
 	}
 
 	@GetMapping("/channel/raw")
 	@Operation(summary = "国标通道编辑时的数据回显")
 	@Parameter(name = "id", description = "通道的Id", required = true)
 	public DeviceChannel getRawChannel(int id) {
+		channelAccessAuthorizer.requireChannelHidden(
+				DEVICE_LIST_PERMISSION, id);
 		return deviceChannelService.getRawChannel(id);
 	}
 
+	@PreAuthorize("@authz.check('video:device:sync')")
 	@GetMapping("/subscribe/catalog")
 	@Operation(summary = "开启/关闭目录订阅")
 	@Parameter(name = "id", description = "通道的Id", required = true)
 	@Parameter(name = "cycle", description = "订阅周期", required = true)
 	public void subscribeCatalog(int id, int cycle) {
+		channelAccessAuthorizer.requireGbDeviceId(
+				DEVICE_SYNC_PERMISSION, id);
 		deviceService.subscribeCatalog(id, cycle);
 	}
 
+	@PreAuthorize("@authz.check('video:position:subscribe')")
 	@GetMapping("/subscribe/mobile-position")
 	@Operation(summary = "开启/关闭移动位置订阅")
 	@Parameter(name = "id", description = "通道的Id", required = true)
 	@Parameter(name = "cycle", description = "订阅周期", required = true)
 	@Parameter(name = "interval", description = "报送间隔", required = true)
 	public void subscribeMobilePosition(int id, int cycle, int interval) {
+		channelAccessAuthorizer.requireGbDeviceId(
+				POSITION_SUBSCRIBE_PERMISSION, id);
 		deviceService.subscribeMobilePosition(id, cycle, interval);
 	}
 
@@ -440,6 +526,8 @@ public class DeviceQuery {
 		if (ObjectUtils.isEmpty(deviceId)) {
 			return List.of();
 		}
+		channelAccessAuthorizer.requireGbDeviceHidden(
+				DEVICE_LIST_PERMISSION, deviceId);
 		return deviceService.getKeepaliveTimeStatistics(deviceId, count);
 	}
 
@@ -451,14 +539,19 @@ public class DeviceQuery {
 		if (ObjectUtils.isEmpty(deviceId)) {
 			return List.of();
 		}
+		channelAccessAuthorizer.requireGbDeviceHidden(
+				DEVICE_LIST_PERMISSION, deviceId);
 		return deviceService.getRegisterTimeStatistics(deviceId, count);
 	}
 
+	@PreAuthorize("@authz.check('video:device:config')")
 	@GetMapping("/subscribe/alarm")
 	@Operation(summary = "开启/关闭报警订阅")
 	@Parameter(name = "id", description = "通道的Id", required = true)
 	@Parameter(name = "cycle", description = "订阅周期", required = true)
 	public void subscribeAlarm(int id, int cycle) {
+		channelAccessAuthorizer.requireGbDeviceId(
+				DEVICE_CONFIG_PERMISSION, id);
 		deviceService.subscribeAlarm(id, cycle);
 	}
 }

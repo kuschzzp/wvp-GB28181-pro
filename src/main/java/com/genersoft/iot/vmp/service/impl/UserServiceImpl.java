@@ -1,42 +1,45 @@
 package com.genersoft.iot.vmp.service.impl;
 
+import com.genersoft.iot.vmp.auth.repository.PermissionCache;
 import com.genersoft.iot.vmp.service.IUserService;
 import com.genersoft.iot.vmp.storager.dao.UserMapper;
+import com.genersoft.iot.vmp.storager.dao.UserRoleMapper;
 import com.genersoft.iot.vmp.storager.dao.dto.User;
+import com.genersoft.iot.vmp.utils.DateUtil;
 import com.github.pagehelper.PageHelper;
 import com.github.pagehelper.PageInfo;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.DigestUtils;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
 public class UserServiceImpl implements IUserService {
 
-    @Autowired
-    private UserMapper userMapper;
+    private final UserMapper userMapper;
+    private final UserRoleMapper userRoleMapper;
+    private final PermissionCache permissionCache;
 
-    @Override
-    public User getUser(String username, String password) {
-        return userMapper.select(username, password);
+    public UserServiceImpl(
+            UserMapper userMapper,
+            UserRoleMapper userRoleMapper,
+            PermissionCache permissionCache) {
+        this.userMapper = userMapper;
+        this.userRoleMapper = userRoleMapper;
+        this.permissionCache = permissionCache;
     }
 
     @Override
-    public boolean changePassword(int id, String password) {
-        User user = userMapper.selectById(id);
-        user.setPassword(password);
-        return userMapper.update(user) > 0;
-    }
-
-    @Override
-    public User getUserById(int id) {
-        return userMapper.selectById(id);
+    public User getUserById(long id) {
+        return enrich(userMapper.selectById(id));
     }
 
     @Override
     public User getUserByUsername(String username) {
-        return userMapper.getUserByUsername(username);
+        return enrich(userMapper.getUserByUsername(username));
     }
 
     @Override
@@ -48,20 +51,18 @@ public class UserServiceImpl implements IUserService {
         return userMapper.add(user);
     }
     @Override
-    public int deleteUser(int id) {
-        return userMapper.delete(id);
+    public boolean softDelete(long userId, long operatorId) {
+        boolean deleted = userMapper.softDelete(userId, operatorId, DateUtil.getNow()) > 0;
+        if (deleted) {
+            evictPermissionCacheAfterCommit(userId);
+        }
+        return deleted;
     }
 
     @Override
     public List<User> getAllUsers() {
-        return userMapper.selectAll();
+        return enrich(userMapper.selectAll());
     }
-
-    @Override
-    public int updateUsers(User user) {
-        return userMapper.update(user);
-    }
-
 
     @Override
     public boolean checkPushAuthority(String callId, String sign) {
@@ -87,11 +88,57 @@ public class UserServiceImpl implements IUserService {
     public PageInfo<User> getUsers(int page, int count) {
         PageHelper.startPage(page, count);
         List<User> users = userMapper.getUsers();
+        enrich(users);
         return new PageInfo<>(users);
     }
 
     @Override
-    public int changePushKey(int id, String pushKey) {
+    public int changePushKey(long id, String pushKey) {
         return userMapper.changePushKey(id,pushKey);
+    }
+
+    @Override
+    public boolean upgradePassword(long userId, String expectedPassword, String newPassword, int passwordVersion) {
+        boolean upgraded = userMapper.upgradePassword(
+                userId,
+                expectedPassword,
+                newPassword,
+                passwordVersion,
+                DateUtil.getNow()) > 0;
+        if (upgraded) {
+            evictPermissionCacheAfterCommit(userId);
+        }
+        return upgraded;
+    }
+
+    @Override
+    public void updateLastLogin(long userId, LocalDateTime lastLoginAt) {
+        userMapper.updateLastLogin(userId, lastLoginAt);
+    }
+
+    private User enrich(User user) {
+        if (user != null) {
+            user.setRoleIds(new java.util.LinkedHashSet<>(userRoleMapper.findRoleIdsByUserId(user.getId())));
+        }
+        return user;
+    }
+
+    private List<User> enrich(List<User> users) {
+        users.forEach(this::enrich);
+        return users;
+    }
+
+    private void evictPermissionCacheAfterCommit(long userId) {
+        Runnable eviction = () -> permissionCache.evictUser(userId);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    eviction.run();
+                }
+            });
+        } else {
+            eviction.run();
+        }
     }
 }

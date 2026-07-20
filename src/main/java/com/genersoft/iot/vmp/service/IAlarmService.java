@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.service;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.common.StreamInfo;
 import com.genersoft.iot.vmp.service.bean.Alarm;
 import com.genersoft.iot.vmp.service.bean.AlarmType;
@@ -12,13 +13,23 @@ public interface IAlarmService {
     void saveAlarmInfo(Alarm alarm);
 
     // 分页获取报警信息
-    PageInfo<Alarm> getAlarms(int page, int size, List<AlarmType> alarmType, String beginTime, String endTime);
+    PageInfo<Alarm> getAlarms(
+            int page,
+            int size,
+            List<AlarmType> alarmType,
+            String beginTime,
+            String endTime,
+            VideoScopeQuery scope);
 
     // 删除报警信息
     void deleteAlarmInfo(List<Long> ids);
 
     // 按筛选条件清空报警信息
-    int clearAlarmsByCondition(List<AlarmType> alarmType, String beginTime, String endTime);
+    int clearAlarmsByCondition(
+            List<AlarmType> alarmType,
+            String beginTime,
+            String endTime,
+            VideoScopeQuery scope);
 
     // 根据ID获取报警快照
     String getAlarmSnapById(Long id);

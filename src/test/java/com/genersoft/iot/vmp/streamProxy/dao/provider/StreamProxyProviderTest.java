@@ -1,9 +1,11 @@
 package com.genersoft.iot.vmp.streamProxy.dao.provider;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -43,7 +45,7 @@ class StreamProxyProviderTest {
 
     @Test
     void selectAll_withQuery_shouldUseBindVariable() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         params.put("query", "test-query");
         String sql = provider.selectAll(params);
         assertTrue(sql.contains("#{query}"), "should use #{query} bind variable");
@@ -53,7 +55,7 @@ class StreamProxyProviderTest {
 
     @Test
     void selectAll_withMediaServerId_shouldUseBindVariable() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         params.put("mediaServerId", "server-001");
         String sql = provider.selectAll(params);
         assertTrue(sql.contains("#{mediaServerId}"), "should use #{mediaServerId} bind variable");
@@ -62,7 +64,7 @@ class StreamProxyProviderTest {
 
     @Test
     void selectAll_withPullingTrue() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         params.put("pulling", true);
         String sql = provider.selectAll(params);
         assertTrue(sql.contains("st.pulling=1"), "should filter by pulling=1");
@@ -70,7 +72,7 @@ class StreamProxyProviderTest {
 
     @Test
     void selectAll_withPullingFalse() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         params.put("pulling", false);
         String sql = provider.selectAll(params);
         assertTrue(sql.contains("st.pulling=0"), "should filter by pulling=0");
@@ -78,7 +80,7 @@ class StreamProxyProviderTest {
 
     @Test
     void selectAll_withoutParams_shouldReturnBaseQuery() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         String sql = provider.selectAll(params);
         assertTrue(sql.contains("FROM wvp_stream_proxy"), "should have FROM clause");
         assertTrue(sql.contains("LEFT join wvp_device_channel"), "should have JOIN clause");
@@ -91,5 +93,12 @@ class StreamProxyProviderTest {
         assertTrue(sql.contains("SELECT"), "should start with SELECT");
         assertTrue(sql.contains("FROM wvp_stream_proxy"), "should have FROM");
         assertTrue(sql.contains("LEFT join wvp_device_channel"), "should have LEFT JOIN");
+    }
+
+    private Map<String, Object> scopedParams() {
+        Map<String, Object> params = new HashMap<>();
+        params.put("scope", new VideoScopeQuery(
+                true, Set.of(), Set.of(), Set.of(), "video:proxy:list", 1L));
+        return params;
     }
 }

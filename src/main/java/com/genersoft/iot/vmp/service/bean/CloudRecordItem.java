@@ -83,6 +83,26 @@ public class CloudRecordItem {
     private double timeLen;
 
     /**
+     * 可追溯的稳定来源类型
+     */
+    private String sourceType;
+
+    /**
+     * 来源资源内部主键
+     */
+    private Long sourceId;
+
+    /**
+     * 统一通道内部主键
+     */
+    private Long channelId;
+
+    /**
+     * 旧录像来源回填结果；NULL 表示尚未判定
+     */
+    private String sourceReason;
+
+    /**
      * 所属服务ID
      */
     private String serverId;

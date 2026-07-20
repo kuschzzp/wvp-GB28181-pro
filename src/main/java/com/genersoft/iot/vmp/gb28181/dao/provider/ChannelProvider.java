@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.gb28181.dao.provider;
 
+import com.genersoft.iot.vmp.authorization.video.VideoListScopeSql;
 import com.genersoft.iot.vmp.gb28181.bean.CommonGBChannel;
 import com.genersoft.iot.vmp.gb28181.bean.Device;
 import com.genersoft.iot.vmp.gb28181.bean.Group;
@@ -108,6 +109,7 @@ public class ChannelProvider {
 
     private final static String BASE_SQL_FOR_PLATFORM =
             "select\n" +
+            "    wpgc.*,\n" +
             "    wdc.id as gb_id,\n" +
             "    wdc.data_type,\n" +
             "    wdc.data_device_id,\n" +
@@ -240,7 +242,9 @@ public class ChannelProvider {
         if (params.get("dataType") != null) {
             sqlBuild.append(" AND data_type = #{dataType}");
         }
-        return sqlBuild.toString();
+        VideoListScopeSql.appendChannelScope(
+                sqlBuild, params, "wvp_device_channel");
+        return VideoListScopeSql.asScript(sqlBuild.toString());
     }
 
     public String queryListByParentId(Map<String, Object> params ){
@@ -266,7 +270,9 @@ public class ChannelProvider {
         if (params.get("dataType") != null) {
             sqlBuild.append(" AND data_type = #{dataType}");
         }
-        return sqlBuild.toString();
+        VideoListScopeSql.appendChannelScope(
+                sqlBuild, params, "wvp_device_channel");
+        return VideoListScopeSql.asScript(sqlBuild.toString());
     }
 
     public String queryList(Map<String, Object> params ){
@@ -296,8 +302,45 @@ public class ChannelProvider {
         if (params.get("parentDeviceId") != null) {
             sqlBuild.append(" AND coalesce(gb_parent_id, parent_id) =  #{parentDeviceId}");
         }
+        VideoListScopeSql.appendChannelScope(sqlBuild, params, "wvp_device_channel");
         sqlBuild.append(" order by create_time desc");
-        return sqlBuild.toString();
+        return VideoListScopeSql.asScript(sqlBuild.toString());
+    }
+
+    public String queryForRecordPlanForWebList(Map<String, Object> params) {
+        StringBuilder sql = new StringBuilder(BASE_SQL_TABLE_NAME);
+        sql.append(" where wdc.channel_type = 0 ");
+        if (params.get("query") != null) {
+            sql.append(" AND (coalesce(wdc.gb_device_id, wdc.device_id) LIKE concat('%',#{query},'%') escape '/' ")
+                    .append(" OR coalesce(wdc.gb_name, wdc.name) LIKE concat('%',#{query},'%') escape '/') ");
+        }
+        if (Boolean.TRUE.equals(params.get("online"))) {
+            sql.append(" AND coalesce(wdc.gb_status, wdc.status) = 'ON' ");
+        } else if (Boolean.FALSE.equals(params.get("online"))) {
+            sql.append(" AND coalesce(wdc.gb_status, wdc.status) = 'OFF' ");
+        }
+        if (Boolean.TRUE.equals(params.get("hasLink"))) {
+            sql.append(" AND wdc.record_plan_id = #{planId} ");
+        } else if (Boolean.FALSE.equals(params.get("hasLink"))) {
+            sql.append(" AND wdc.record_plan_id is null ");
+        }
+        if (params.get("dataType") != null) {
+            sql.append(" AND wdc.data_type = #{dataType} ");
+        }
+        VideoListScopeSql.appendChannelScope(sql, params, "wdc");
+        return VideoListScopeSql.asScript(sql.toString());
+    }
+
+    public String queryRecordPlanChannelIds(Map<String, Object> params) {
+        StringBuilder sql = new StringBuilder(
+                "select wdc.id from wvp_device_channel wdc where wdc.channel_type = 0 ");
+        if (Boolean.TRUE.equals(params.get("hasLink"))) {
+            sql.append(" AND wdc.record_plan_id = #{planId} ");
+        } else if (Boolean.FALSE.equals(params.get("hasLink"))) {
+            sql.append(" AND wdc.record_plan_id is null ");
+        }
+        VideoListScopeSql.appendChannelScope(sql, params, "wdc");
+        return VideoListScopeSql.asScript(sql.toString());
     }
 
     public String queryInListByStatus(Map<String, Object> params ){
@@ -483,6 +526,42 @@ public class ChannelProvider {
         return sqlBuild.toString() ;
     }
 
+    public String queryForPlatformForWebList(
+            Map<String, Object> params) {
+        StringBuilder sqlBuild = new StringBuilder(BASE_SQL_FOR_PLATFORM);
+        sqlBuild.append(
+                " and wpgc.platform_id = #{platformId}" +
+                " where wdc.channel_type = 0 " +
+                " <if test='query != null'>" +
+                " AND (coalesce(wdc.gb_device_id, wdc.device_id)" +
+                " LIKE concat('%',#{query},'%')" +
+                " OR wpgc.custom_device_id LIKE concat('%',#{query},'%')" +
+                " OR coalesce(wdc.gb_name, wdc.name)" +
+                " LIKE concat('%',#{query},'%')" +
+                " OR wpgc.custom_name LIKE concat('%',#{query},'%'))" +
+                " </if>" +
+                " <if test='online == true'>" +
+                " AND coalesce(wpgc.custom_status, wdc.gb_status," +
+                " wdc.status) = 'ON'" +
+                " </if>" +
+                " <if test='online == false'>" +
+                " AND coalesce(wpgc.custom_status, wdc.gb_status," +
+                " wdc.status) = 'OFF'" +
+                " </if>" +
+                " <if test='hasShare == true'>" +
+                " AND wpgc.platform_id = #{platformId}" +
+                " </if>" +
+                " <if test='hasShare == false'>" +
+                " AND wpgc.platform_id is null" +
+                " </if>" +
+                " <if test='dataType != null'>" +
+                " AND wdc.data_type = #{dataType}" +
+                " </if>");
+        VideoListScopeSql.appendChannelScope(
+                sqlBuild, params, "wdc");
+        return VideoListScopeSql.asScript(sqlBuild.toString());
+    }
+
     public String queryShareChannelByParentId(Map<String, Object> params ){
         StringBuilder sqlBuild = new StringBuilder();
         sqlBuild.append(BASE_SQL_FOR_PLATFORM);
@@ -517,7 +596,8 @@ public class ChannelProvider {
         if (params.get("dataType") != null) {
             sqlBuild.append(" AND wdc.data_type = #{dataType}");
         }
-        return sqlBuild.toString();
+        VideoListScopeSql.appendChannelScope(sqlBuild, params, "wdc");
+        return VideoListScopeSql.asScript(sqlBuild.toString());
     }
 
     public String queryListByParentForUnusual(Map<String, Object> params ){
@@ -540,7 +620,8 @@ public class ChannelProvider {
         if (params.get("dataType") != null) {
             sqlBuild.append(" AND wdc.data_type = #{dataType}");
         }
-        return sqlBuild.toString();
+        VideoListScopeSql.appendChannelScope(sqlBuild, params, "wdc");
+        return VideoListScopeSql.asScript(sqlBuild.toString());
     }
 
     public String queryCommonChannelByDeviceChannel(Map<String, Object> params ){
@@ -555,7 +636,8 @@ public class ChannelProvider {
                 "AND coalesce(wdc.gb_longitude, wdc.longitude) <= #{maxLon} " +
                 "AND coalesce(wdc.gb_latitude,  wdc.latitude) > #{minLat} " +
                 "AND coalesce(wdc.gb_latitude,  wdc.latitude) <= #{maxLat}");
-        return sqlBuild.toString();
+        VideoListScopeSql.appendChannelScope(sqlBuild, params, "wdc");
+        return VideoListScopeSql.asScript(sqlBuild.toString());
     }
 
     public String queryOldChanelListByChannels(Map<String, Object> params ){
@@ -582,7 +664,8 @@ public class ChannelProvider {
         sqlBuild.append(" left join (select wcr.device_id from wvp_common_region wcr) temp on temp.device_id = coalesce(wdc.gb_civil_code, wdc.civil_code)" +
                 " where coalesce(wdc.gb_civil_code, wdc.civil_code) is not null and temp.device_id is null ");
         sqlBuild.append(" AND wdc.channel_type = 0 ");
-        return sqlBuild.toString();
+        VideoListScopeSql.appendChannelScope(sqlBuild, params, "wdc");
+        return VideoListScopeSql.asScript(sqlBuild.toString());
     }
 
     public String queryAllForUnusualParent(Map<String, Object> params ){
@@ -591,7 +674,8 @@ public class ChannelProvider {
         sqlBuild.append(" left join (select wcg.device_id from wvp_common_group wcg) temp on temp.device_id = coalesce(wdc.gb_parent_id, wdc.parent_id)" +
                 " where coalesce(wdc.gb_parent_id, wdc.parent_id) is not null and temp.device_id is null ");
         sqlBuild.append(" AND wdc.channel_type = 0 ");
-        return sqlBuild.toString();
+        VideoListScopeSql.appendChannelScope(sqlBuild, params, "wdc");
+        return VideoListScopeSql.asScript(sqlBuild.toString());
     }
 
     public String queryOnlineListsByGbDeviceId(Map<String, Object> params ){
@@ -631,9 +715,10 @@ public class ChannelProvider {
         if (params.get("online") != null && !(Boolean)params.get("online")) {
             sqlBuild.append(" AND coalesce(wdc.gb_status, wdc.status) = 'OFF'");
         }
+        VideoListScopeSql.appendChannelScope(sqlBuild, params, "wdc");
         sqlBuild.append(" order by coalesce(wdc.gb_status, wdc.status) desc");
 
-        return sqlBuild.toString();
+        return VideoListScopeSql.asScript(sqlBuild.toString());
     }
 
     public String queryListWithChildForSy(Map<String, Object> params ){
@@ -665,6 +750,8 @@ public class ChannelProvider {
         if (params.get("online") != null && !(Boolean)params.get("online")) {
             sqlBuild.append(" AND coalesce(wdc.gb_status, status) = 'OFF'");
         }
+
+        VideoListScopeSql.appendChannelScope(sqlBuild, params, "wdc");
 
         if (params.get("sortName") != null) {
             StringBuilder sqlBuildForSort = new StringBuilder();
@@ -702,10 +789,36 @@ public class ChannelProvider {
             if (params.get("order") != null && !(Boolean)params.get("order")) {
                 sqlBuildForSort.append(" DESC");
             }
-            return sqlBuildForSort.toString();
+            return VideoListScopeSql.asScript(sqlBuildForSort.toString());
         }else {
-            return sqlBuild.toString();
+            return VideoListScopeSql.asScript(sqlBuild.toString());
         }
+    }
+
+    public String queryCountWithChildForSy(Map<String, Object> params) {
+        StringBuilder sqlBuild = new StringBuilder();
+        sqlBuild.append("select coalesce(wdc.gb_parent_id, wdc.parent_id) as deviceId, ")
+                .append("count(*) as allCount, ")
+                .append("sum(case when coalesce(wdc.gb_status, wdc.status) = 'ON' ")
+                .append("then 1 else 0 end) as onlineCount ")
+                .append("from wvp_device_channel wdc ")
+                .append("where wdc.channel_type = 0 and wdc.data_type != 2 ")
+                .append("and (wdc.gb_ptz_type is null or ")
+                .append("(wdc.gb_ptz_type != 98 and wdc.gb_ptz_type != 99)) ")
+                .append("and coalesce(wdc.gb_parent_id, wdc.parent_id) in (");
+        List<CameraGroup> groupList = (List<CameraGroup>) params.get("groupList");
+        for (int index = 0; index < groupList.size(); index++) {
+            if (index > 0) {
+                sqlBuild.append(",");
+            }
+            sqlBuild.append("#{groupList[")
+                    .append(index)
+                    .append("].deviceId}");
+        }
+        sqlBuild.append(") ");
+        VideoListScopeSql.appendChannelScope(sqlBuild, params, "wdc");
+        sqlBuild.append(" group by coalesce(wdc.gb_parent_id, wdc.parent_id)");
+        return VideoListScopeSql.asScript(sqlBuild.toString());
     }
 
     public String queryListInBox(Map<String, Object> params ){
@@ -730,7 +843,8 @@ public class ChannelProvider {
             sqlBuild.append(" AND ( map_level <= #{level} or map_level is null )");
         }
 
-        return sqlBuild.toString();
+        VideoListScopeSql.appendChannelScope(sqlBuild, params, "wdc");
+        return VideoListScopeSql.asScript(sqlBuild.toString());
     }
 
     public String queryListInCircleForMysql(Map<String, Object> params ){
@@ -754,7 +868,8 @@ public class ChannelProvider {
             sqlBuild.append(" AND ( map_level <= #{level} or map_level is null )");
         }
 
-        return sqlBuild.toString();
+        VideoListScopeSql.appendChannelScope(sqlBuild, params, "wdc");
+        return VideoListScopeSql.asScript(sqlBuild.toString());
     }
 
     public String queryListInCircleForKingBase(Map<String, Object> params ){
@@ -778,7 +893,8 @@ public class ChannelProvider {
             sqlBuild.append(" AND ( map_level <= #{level} or map_level is null )");
         }
 
-        return sqlBuild.toString();
+        VideoListScopeSql.appendChannelScope(sqlBuild, params, "wdc");
+        return VideoListScopeSql.asScript(sqlBuild.toString());
     }
 
     public String queryListInPolygonForMysql(Map<String, Object> params ){
@@ -811,7 +927,8 @@ public class ChannelProvider {
             sqlBuild.append(" AND ( map_level <= #{level} or map_level is null )");
         }
 
-        return sqlBuild.toString();
+        VideoListScopeSql.appendChannelScope(sqlBuild, params, "wdc");
+        return VideoListScopeSql.asScript(sqlBuild.toString());
     }
 
     public String queryListInPolygonForKingBase(Map<String, Object> params ){
@@ -844,7 +961,8 @@ public class ChannelProvider {
             sqlBuild.append(" AND ( map_level <= #{level} or map_level is null )");
         }
 
-        return sqlBuild.toString();
+        VideoListScopeSql.appendChannelScope(sqlBuild, params, "wdc");
+        return VideoListScopeSql.asScript(sqlBuild.toString());
     }
 
     public String queryGbChannelByChannelDeviceIdAndGbDeviceId(Map<String, Object> params ){
@@ -864,18 +982,18 @@ public class ChannelProvider {
         if (params.get("directionType") != null) {
             sqlBuild.append(" and coalesce(wdc.gb_direction_type,  wdc.direction_type) = #{directionType}");
         }
-        return sqlBuild.toString();
+        VideoListScopeSql.appendChannelScope(sqlBuild, params, "wdc");
+        return VideoListScopeSql.asScript(sqlBuild.toString());
     }
 
 
     public String queryListByDeviceIds(Map<String, Object> params ){
         StringBuilder sqlBuild = new StringBuilder();
-        sqlBuild.append("<script> ");
         sqlBuild.append(BASE_SQL_FOR_CAMERA_DEVICE);
         sqlBuild.append(" where coalesce(wdc.gb_device_id,  wdc.device_id) in ");
         sqlBuild.append(" <foreach item='item' index='index' collection='deviceIds' open='(' separator=',' close=')'> #{item} </foreach>");
-        sqlBuild.append(" </script>");
-        return sqlBuild.toString() ;
+        VideoListScopeSql.appendChannelScope(sqlBuild, params, "wdc");
+        return VideoListScopeSql.asScript(sqlBuild.toString());
     }
 
     public String queryCameraChannelByIds(Map<String, Object> params ){
@@ -903,14 +1021,16 @@ public class ChannelProvider {
         if (params.get("business") != null) {
             sqlBuild.append(" AND coalesce(gb_business_group_id, business_group_id) = #{business}");
         }
-        return sqlBuild.toString();
+        VideoListScopeSql.appendChannelScope(sqlBuild, params, "wdc");
+        return VideoListScopeSql.asScript(sqlBuild.toString());
     }
 
     public String queryMeetingChannelList(Map<String, Object> params ){
         StringBuilder sqlBuild = new StringBuilder();
         sqlBuild.append(BASE_SQL_FOR_CAMERA_DEVICE);
         sqlBuild.append(" WHERE wdc.channel_type = 0 AND wdc.data_type = 3 and wdc.gb_ptz_type = 98 and coalesce(wdc.gb_business_group_id, wdc.business_group_id) = #{business}");
-        return sqlBuild.toString();
+        VideoListScopeSql.appendChannelScope(sqlBuild, params, "wdc");
+        return VideoListScopeSql.asScript(sqlBuild.toString());
     }
 
 
@@ -919,10 +1039,22 @@ public class ChannelProvider {
     }
 
     public String queryAllWithPosition(Map<String, Object> params ){
-        return BASE_SQL + " where channel_type = 0 " +
-                " AND coalesce(gb_longitude, longitude) > 0" +
-                " AND coalesce(gb_latitude,  latitude) > 0 " +
-                " ORDER BY map_level";
+        StringBuilder sqlBuild = new StringBuilder(BASE_SQL);
+        sqlBuild.append(" where channel_type = 0 ")
+                .append(" AND coalesce(gb_longitude, longitude) > 0")
+                .append(" AND coalesce(gb_latitude, latitude) > 0 ");
+        VideoListScopeSql.appendChannelScope(
+                sqlBuild, params, "wvp_device_channel");
+        sqlBuild.append(" ORDER BY map_level");
+        return VideoListScopeSql.asScript(sqlBuild.toString());
+    }
+
+    public String queryAllWithPositionForInternalMaintenance(
+            Map<String, Object> params) {
+        return BASE_SQL + " where channel_type = 0 "
+                + " AND coalesce(gb_longitude, longitude) > 0"
+                + " AND coalesce(gb_latitude, latitude) > 0 "
+                + " ORDER BY map_level";
     }
 
     public String queryListInExtent(Map<String, Object> params ){
@@ -933,7 +1065,9 @@ public class ChannelProvider {
                 "AND coalesce(gb_longitude, longitude) <= #{maxLng} " +
                 "AND coalesce(gb_latitude,  latitude) > #{minLat} " +
                 "AND coalesce(gb_latitude,  latitude) <= #{maxLat}");
-        return sqlBuild.toString();
+        VideoListScopeSql.appendChannelScope(
+                sqlBuild, params, "wvp_device_channel");
+        return VideoListScopeSql.asScript(sqlBuild.toString());
     }
 
     public String queryListOutExtent(Map<String, Object> params ){

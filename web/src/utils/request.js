@@ -16,7 +16,8 @@ const service = axios.create({
 service.interceptors.request.use(
   config => {
     // do something before request is sent
-    if (store.getters.token && config.url.indexOf('api/user/login') < 0) {
+    const isLoginRequest = config.url && config.url.indexOf('/api/auth/login') >= 0
+    if (store.getters.token && !isLoginRequest && !config.skipAuth) {
       config.headers['access-token'] = getToken()
     }
     return config
@@ -41,19 +42,20 @@ service.interceptors.response.use(
    * You can also judge the status by HTTP Status Code
    */
   response => {
-    if (response.config.url.indexOf('/api/user/logout') >= 0) {
-      return
-    }
     const res = response.data
     if (res.code && res.code !== 0) {
-      throw res.msg
+      return Promise.reject(res.msg)
     } else {
       return res
     }
   },
   error => {
     console.log(error) // for debug
-    if (error.response.status === 401) {
+    if (error.config && error.config.suppressGlobalError) {
+      return Promise.reject(error)
+    }
+    const status = error.response && error.response.status
+    if (status === 401) {
       if (!showLoginConfirm && store.getters.showConfirmBoxForLoginLose) {
         // to re-login
         showLoginConfirm = true
@@ -75,24 +77,30 @@ service.interceptors.response.use(
 
         })
       }
-    }else {
+    } else if (status === 403) {
+      const data = error.response && error.response.data
+      Message.error({
+        message: data && data.msg ? data.msg : '无权限',
+        showClose: true
+      })
+    } else {
       if (!store.getters.showConfirmBoxForLoginLose) {
-        return
+        return Promise.reject(error)
       }
-      let data = error.response.data
+      const data = error.response && error.response.data
       if (data && data.msg) {
         Message.error({
           message: data.msg,
           showClose: true
         })
-      }else {
+      } else {
         Message.error({
           message: error.message,
           showClose: true
         })
       }
     }
-    // return Promise.reject(error)
+    return Promise.reject(error)
   }
 )
 

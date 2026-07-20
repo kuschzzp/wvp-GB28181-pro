@@ -1,0 +1,12 @@
+package com.genersoft.iot.vmp.authorization.resourcegroup.dto;
+
+public record UpdateResourceGroupCommand(
+        long id,
+        long parentId,
+        String groupCode,
+        String groupName,
+        int orderNum,
+        int status,
+        String description,
+        Long operatorId) {
+}

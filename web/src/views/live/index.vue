@@ -25,7 +25,12 @@
           </div>
           <div class="fullscreen-control">
             <i class="el-icon-full-screen btn" @click="fullScreen()" />
-            <i class="iconfont icon-PTZ btn" title="云台控制" @click="togglePtzPanel" />
+            <i
+              v-if="$auth.hasPermi(['video:ptz:control', 'video:ptz:preset'])"
+              class="iconfont icon-PTZ btn"
+              title="云台控制"
+              @click="togglePtzPanel"
+            />
           </div>
         </div>
         <div class="player-container">
@@ -52,18 +57,22 @@
           </div>
         </div>
       </div>
-      <div class="ptz-panel" v-show="ptzVisible">
+      <div
+        v-if="$auth.hasPermi(['video:ptz:control', 'video:ptz:preset'])"
+        v-show="ptzVisible"
+        class="ptz-panel"
+      >
         <div class="ptz-panel-header">
           <span>云台控制</span>
           <i class="el-icon-close" @click="ptzVisible = false" />
         </div>
         <div class="ptz-panel-body">
           <template v-if="currentChannelId">
-            <div class="ptz-preset-section">
+            <div v-if="$auth.hasPermi(['video:ptz:preset'])" class="ptz-preset-section">
               <div class="section-title">预置位</div>
               <LivePtzPreset :channel-id="currentChannelId" />
             </div>
-            <div class="ptz-control-section">
+            <div v-if="$auth.hasPermi(['video:ptz:control'])" class="ptz-control-section">
               <div class="section-title">方向控制</div>
               <channelPtzPanel :channel-id="currentChannelId" @drag-zoom-start="handleDragZoom" />
             </div>
@@ -205,6 +214,7 @@ export default {
       }
     },
     handleDragZoom(direction) {
+      if (!this.$auth.hasPermi(['video:ptz:control'])) return
       const refName = 'playerTabs' + (this.playerIdx + 1)
       const ref = this.$refs[refName]
       if (!ref) return
@@ -226,6 +236,7 @@ export default {
       })
     },
     togglePtzPanel() {
+      if (!this.$auth.hasPermi(['video:ptz:control', 'video:ptz:preset'])) return
       this.ptzVisible = !this.ptzVisible
       if (this.ptzVisible) {
         this.sidebarVisible = false
@@ -245,6 +256,10 @@ export default {
       })
     },
     clickEvent: function(channelId) {
+      if (!this.$auth.hasPermi(['video:channel:play'])) {
+        this.$message.warning('当前账号没有视频播放权限')
+        return
+      }
       this.currentChannelId = channelId
       this.sendDevicePush(channelId)
     },
@@ -260,6 +275,7 @@ export default {
     },
     // 通知设备上传媒体流
     sendDevicePush: function(channelId) {
+      if (!this.$auth.hasPermi(['video:channel:play'])) return
       this.save(channelId)
       const idxTmp = this.playerIdx
       this.$set(this.streamInfo, idxTmp, null)
@@ -283,7 +299,7 @@ export default {
         if (ref) {
           const instance = ref instanceof Array ? ref[0] : ref
           if (instance && instance.setStreamInfo) {
-            instance.setStreamInfo(streamInfo)
+            instance.setStreamInfo(streamInfo.playable)
           }
         }
       })

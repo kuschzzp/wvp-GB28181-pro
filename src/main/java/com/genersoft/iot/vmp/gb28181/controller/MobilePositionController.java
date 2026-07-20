@@ -1,5 +1,9 @@
 package com.genersoft.iot.vmp.gb28181.controller;
 
+import com.genersoft.iot.vmp.authorization.AuthorizationFacade;
+import com.genersoft.iot.vmp.authorization.video.GbChannelAccessAuthorizer;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceRef;
+import com.genersoft.iot.vmp.authorization.video.resolver.VideoResourceNotFoundException;
 import com.genersoft.iot.vmp.conf.exception.ControllerException;
 import com.genersoft.iot.vmp.conf.security.JwtUtils;
 import com.genersoft.iot.vmp.gb28181.bean.Device;
@@ -17,6 +21,8 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.util.Assert;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.request.async.DeferredResult;
 
@@ -33,10 +39,21 @@ import java.util.UUID;
 @Slf4j
 @RestController
 @RequestMapping("/api/position")
+@PreAuthorize("@authz.check('video:position:list')")
 public class MobilePositionController {
+
+    private static final String POSITION_LIST_PERMISSION = "video:position:list";
+    private static final String POSITION_SUBSCRIBE_PERMISSION =
+            "video:position:subscribe";
 
     @Autowired
     private IMobilePositionService mobilePositionService;
+
+    @Autowired
+    private AuthorizationFacade authorizationFacade;
+
+	@Autowired
+	private GbChannelAccessAuthorizer channelAccessAuthorizer;
 
 	@Autowired
 	private ISIPCommander cmder;
@@ -53,9 +70,18 @@ public class MobilePositionController {
     @Parameter(name = "start", description = "开始时间")
     @Parameter(name = "end", description = "结束时间")
     @GetMapping("/history/{deviceId}")
-    public List<MobilePosition> positions( Integer channelId,
+    public List<MobilePosition> positions(
+                                           @PathVariable String deviceId,
+                                           @RequestParam(required = false) Integer channelId,
                                            @RequestParam(required = false) String start,
                                            @RequestParam(required = false) String end) {
+
+        VideoResourceRef channel = channelAccessAuthorizer
+                .requireUnifiedChannelHidden(
+                        POSITION_LIST_PERMISSION, deviceId, null);
+        if (channelId != null && channel.id() != channelId.longValue()) {
+            throw new VideoResourceNotFoundException("位置通道不存在");
+        }
 
         if (StringUtil.isEmpty(start)) {
             start = null;
@@ -63,14 +89,22 @@ public class MobilePositionController {
         if (StringUtil.isEmpty(end)) {
             end = null;
         }
-        return mobilePositionService.queryMobilePositions(channelId, start, end);
+        return mobilePositionService.queryMobilePositions(
+                Math.toIntExact(channel.id()),
+                start,
+                end,
+                authorizationFacade.resolveVideoScopeQuery(POSITION_LIST_PERMISSION));
     }
 
     @Operation(summary = "查询通道最新位置", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "channelId", description = "通道的数据库ID", required = true)
     @GetMapping("/latest")
-    public MobilePosition latestPosition(Integer channelId) {
-        return mobilePositionService.queryLatestPosition(channelId);
+    public MobilePosition latestPosition(@RequestParam Integer channelId) {
+        channelAccessAuthorizer.requireChannelHidden(
+                POSITION_LIST_PERMISSION, channelId);
+        return mobilePositionService.queryLatestPosition(
+                channelId,
+                authorizationFacade.resolveVideoScopeQuery(POSITION_LIST_PERMISSION));
     }
 
     /**
@@ -82,7 +116,10 @@ public class MobilePositionController {
     @Parameter(name = "deviceId", description = "设备国标编号", required = true)
     @GetMapping("/realtime/{deviceId}")
     public DeferredResult<MobilePosition> realTimePosition(@PathVariable String deviceId) {
+        channelAccessAuthorizer.requireGbDevice(
+                POSITION_LIST_PERMISSION, deviceId);
         Device device = deviceService.getDeviceByDeviceId(deviceId);
+        Assert.notNull(device, "设备不存在");
         String uuid = UUID.randomUUID().toString();
         String key = DeferredResultHolder.CALLBACK_CMD_MOBILE_POSITION + deviceId;
         try {
@@ -122,6 +159,7 @@ public class MobilePositionController {
     @Parameter(name = "deviceId", description = "设备国标编号", required = true)
     @Parameter(name = "expires", description = "订阅超时时间", required = true)
     @Parameter(name = "interval", description = "上报时间间隔", required = true)
+    @PreAuthorize("@authz.check('video:position:subscribe')")
     @GetMapping("/subscribe/{deviceId}")
     public void positionSubscribe(@PathVariable String deviceId,
                                                     @RequestParam String expires,
@@ -130,7 +168,10 @@ public class MobilePositionController {
         if (StringUtil.isEmpty(interval)) {
             interval = "5";
         }
+        channelAccessAuthorizer.requireGbDevice(
+                POSITION_SUBSCRIBE_PERMISSION, deviceId);
         Device device = deviceService.getDeviceByDeviceId(deviceId);
+        Assert.notNull(device, "设备不存在");
         device.setSubscribeCycleForMobilePosition(Integer.parseInt(expires));
         device.setMobilePositionSubmissionInterval(Integer.parseInt(interval));
         deviceService.updateCustomDevice(device);

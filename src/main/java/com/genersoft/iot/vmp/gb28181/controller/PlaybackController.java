@@ -1,5 +1,8 @@
 package com.genersoft.iot.vmp.gb28181.controller;
 
+import com.genersoft.iot.vmp.authorization.video.GbChannelAccessAuthorizer;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceRef;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceType;
 import com.genersoft.iot.vmp.common.InviteSessionType;
 import com.genersoft.iot.vmp.common.StreamInfo;
 import com.genersoft.iot.vmp.conf.UserSetting;
@@ -15,6 +18,7 @@ import com.genersoft.iot.vmp.gb28181.service.IPlayService;
 import com.genersoft.iot.vmp.gb28181.transmit.callback.DeferredResultHolder;
 import com.genersoft.iot.vmp.gb28181.transmit.callback.RequestMessage;
 import com.genersoft.iot.vmp.gb28181.transmit.cmd.impl.SIPCommander;
+import com.genersoft.iot.vmp.media.security.PlayableStreamService;
 import com.genersoft.iot.vmp.service.bean.InviteErrorCode;
 import com.genersoft.iot.vmp.vmanager.bean.ErrorCode;
 import com.genersoft.iot.vmp.vmanager.bean.StreamContent;
@@ -25,6 +29,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -48,7 +53,16 @@ import java.util.UUID;
 @Slf4j
 @RestController
 @RequestMapping("/api/playback")
+@PreAuthorize("@authz.check('video:record:play')")
 public class PlaybackController {
+
+	private static final String RECORD_PLAY_PERMISSION = "video:record:play";
+
+	@Autowired
+	private GbChannelAccessAuthorizer channelAccessAuthorizer;
+
+	@Autowired
+	private PlayableStreamService playableStreamService;
 
 	@Autowired
 	private SIPCommander cmder;
@@ -81,6 +95,8 @@ public class PlaybackController {
 														  String startTime, String endTime) {
 
 		log.info("[录像回放] deviceId: {}, channelId: {}, startTime: {}, endTime: {}", deviceId, channelId, startTime, endTime);
+		VideoResourceRef channelResource = channelAccessAuthorizer.requireGbChannel(
+				RECORD_PLAY_PERMISSION, deviceId, channelId);
 
 		String uuid = UUID.randomUUID().toString();
 		String key = DeferredResultHolder.CALLBACK_CMD_PLAYBACK + deviceId + channelId;
@@ -122,7 +138,10 @@ public class PlaybackController {
 								}
 								streamInfo.changeStreamIp(host);
 							}
-							wvpResult.setData(new StreamContent(streamInfo));
+							wvpResult.setData(playableStreamService.publish(
+									streamInfo,
+									VideoResourceType.DEVICE_RECORD,
+									channelResource.id()));
 						}
 					}else {
 						wvpResult.setCode(code);
@@ -148,6 +167,8 @@ public class PlaybackController {
 		if (ObjectUtils.isEmpty(deviceId) || ObjectUtils.isEmpty(channelId) || ObjectUtils.isEmpty(stream)) {
 			throw new ControllerException(ErrorCode.ERROR400);
 		}
+		channelAccessAuthorizer.requireGbChannel(
+				RECORD_PLAY_PERMISSION, deviceId, channelId);
 		Device device = deviceService.getDeviceByDeviceId(deviceId);
 		if (device == null) {
 			throw new ControllerException(ErrorCode.ERROR400.getCode(), "设备：" + deviceId + " 未找到");
@@ -164,6 +185,8 @@ public class PlaybackController {
 	@Parameter(name = "streamId", description = "回放流ID", required = true)
 	@GetMapping("/pause/{streamId}")
 	public void playbackPause(@PathVariable String streamId) {
+		channelAccessAuthorizer.requireRtpStream(
+				RECORD_PLAY_PERMISSION, streamId);
 		log.info("[回放暂停] streamId: {}", streamId);
 		try {
 			playService.playbackPause(streamId);
@@ -179,6 +202,8 @@ public class PlaybackController {
 	@Parameter(name = "streamId", description = "回放流ID", required = true)
 	@GetMapping("/resume/{streamId}")
 	public void playResume(@PathVariable String streamId) {
+		channelAccessAuthorizer.requireRtpStream(
+				RECORD_PLAY_PERMISSION, streamId);
 		log.info("playResume: "+streamId);
 		try {
 			playService.playbackResume(streamId);
@@ -194,6 +219,8 @@ public class PlaybackController {
 	@Parameter(name = "seekTime", description = "拖动偏移量，单位s", required = true)
 	@GetMapping("/seek/{streamId}/{seekTime}")
 	public void playbackSeek(@PathVariable String streamId, @PathVariable long seekTime) {
+		channelAccessAuthorizer.requireRtpStream(
+				RECORD_PLAY_PERMISSION, streamId);
 		log.info("playSeek: "+streamId+", "+seekTime);
 		try {
 			playService.playbackSeek(streamId, seekTime);
@@ -208,6 +235,8 @@ public class PlaybackController {
 	@GetMapping("/speed/{streamId}/{speed}")
 	public void playSpeed(@PathVariable String streamId, @PathVariable Double speed) {
 		Assert.notNull(speed, "倍速不存在");
+		channelAccessAuthorizer.requireRtpStream(
+				RECORD_PLAY_PERMISSION, streamId);
 		log.info("playSpeed: "+streamId+", "+speed);
 		try {
 			playService.playbackSpeed(streamId, speed);

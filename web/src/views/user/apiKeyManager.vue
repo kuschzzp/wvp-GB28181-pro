@@ -11,7 +11,14 @@
     >
       <el-form :inline="true" size="mini">
         <el-form-item>
-          <el-button icon="el-icon-plus" size="mini" style="margin-right: 1rem;" type="primary" @click="addUserApiKey">
+          <el-button
+            v-hasPermi="['system:apikey:add']"
+            icon="el-icon-plus"
+            size="mini"
+            style="margin-right: 1rem;"
+            type="primary"
+            @click="addUserApiKey"
+          >
             添加ApiKey
           </el-button>
         </el-form-item>
@@ -24,35 +31,36 @@
         :height="winHeight"
         header-row-class-name="table-header"
       >
-        <el-table-column prop="user.username" label="用户名" min-width="120" />
+        <el-table-column prop="username" label="用户名" min-width="120" />
         <el-table-column prop="app" label="应用名" min-width="160" />
         <el-table-column label="ApiKey" :show-overflow-tooltip="true" min-width="300">
           <template #default="scope">
-            <i v-clipboard="scope.row.apiKey" class="cpoy-btn el-icon-document-copy" title="点击拷贝" @success="$message({type:'success', message:'成功拷贝到粘贴板'})" />
-            <span>{{ scope.row.apiKey }}</span>
-
+            <span>{{ formatApiKey(scope.row) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="enable" label="启用" width="120">
+        <el-table-column prop="status" label="状态" width="120">
           <template #default="scope">
-            <el-tag v-if="scope.row.enable">
-              启用
-            </el-tag>
-            <el-tag v-else type="info">
-              停用
+            <el-tag :type="statusTagType(scope.row.status)">
+              {{ statusText(scope.row.status) }}
             </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="过期时间" width="160">
           <template #default="scope">
-            {{ formatTime(scope.row.expiredAt) }}
+            {{ formatTime(scope.row.expiresAt) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="授权范围" min-width="190" show-overflow-tooltip>
+          <template #default="scope">
+            {{ scopeSummary(scope.row) }}
           </template>
         </el-table-column>
         <el-table-column prop="remark" label="备注信息" min-width="160" />
-        <el-table-column label="操作" min-width="260" fixed="right">
+        <el-table-column label="操作" min-width="320" fixed="right">
           <template #default="scope">
             <el-button
-              v-if="scope.row.enable"
+              v-if="scope.row.status === 'ACTIVE' || scope.row.status === 'LEGACY'"
+              v-hasPermi="['system:apikey:disable']"
               size="medium"
               icon="el-icon-circle-close"
               type="text"
@@ -61,7 +69,8 @@
               停用
             </el-button>
             <el-button
-              v-else
+              v-else-if="scope.row.status === 'DISABLED'"
+              v-hasPermi="['system:apikey:disable']"
               size="medium"
               icon="el-icon-circle-check"
               type="text"
@@ -69,16 +78,35 @@
             >
               启用
             </el-button>
-            <el-divider direction="vertical" />
-            <el-button size="medium" icon="el-icon-refresh" type="text" @click="resetUserApiKey(scope.row)">
+            <el-button
+              v-hasPermi="['system:apikey:rotate']"
+              size="medium"
+              icon="el-icon-key"
+              type="text"
+              @click="editUserApiKeyScope(scope.row)"
+            >
+              权限范围
+            </el-button>
+            <el-button
+              v-hasPermi="['system:apikey:rotate']"
+              size="medium"
+              icon="el-icon-refresh"
+              type="text"
+              @click="resetUserApiKey(scope.row)"
+            >
               重置
             </el-button>
-            <el-divider direction="vertical" />
-            <el-button size="medium" icon="el-icon-edit" type="text" @click="remarkUserApiKey(scope.row)">
+            <el-button
+              v-hasPermi="['system:apikey:rotate']"
+              size="medium"
+              icon="el-icon-edit"
+              type="text"
+              @click="remarkUserApiKey(scope.row)"
+            >
               备注
             </el-button>
-            <el-divider direction="vertical" />
             <el-button
+              v-hasPermi="['system:apikey:remove']"
               size="medium"
               icon="el-icon-delete"
               type="text"
@@ -103,19 +131,25 @@
     </el-dialog>
     <addUserApiKey ref="addUserApiKey" />
     <remarkUserApiKey ref="remarkUserApiKey" />
+    <editUserApiKeyScope ref="editUserApiKeyScope" />
+    <apiKeySecret ref="apiKeySecret" />
   </div>
 </template>
 
 <script>
 import addUserApiKey from './dialog/addUserApiKey.vue'
 import remarkUserApiKey from './dialog/remarkUserApiKey.vue'
+import editUserApiKeyScope from './dialog/editUserApiKeyScope.vue'
+import apiKeySecret from './dialog/apiKeySecret.vue'
 import moment from 'moment'
 
 export default {
   name: 'UserApiKeyManager',
   components: {
     addUserApiKey,
-    remarkUserApiKey
+    remarkUserApiKey,
+    editUserApiKeyScope,
+    apiKeySecret
   },
   data() {
     return {
@@ -163,13 +197,14 @@ export default {
         })
     },
     addUserApiKey() {
-      this.$refs.addUserApiKey.openDialog(this.userId, () => {
+      this.$refs.addUserApiKey.openDialog(this.userId, (createdKey) => {
         this.$refs.addUserApiKey.close()
         this.$message({
           showClose: true,
           message: 'ApiKey添加成功',
           type: 'success'
         })
+        this.showApiKeySecret(createdKey)
         setTimeout(this.getUserApiKeyList, 200)
       })
     },
@@ -184,13 +219,13 @@ export default {
         setTimeout(this.getUserApiKeyList, 200)
       })
     },
+    editUserApiKeyScope(row) {
+      this.$refs.editUserApiKeyScope.open(row, this.userId, () => {
+        this.getUserApiKeyList()
+      })
+    },
     enableUserApiKey(row) {
-      let msg = '确定启用此ApiKey？'
-      if (row.online !== 0) {
-        msg = '<strong>确定启用此ApiKey？</strong>'
-      }
-      this.$confirm(msg, '提示', {
-        dangerouslyUseHTMLString: true,
+      this.$confirm('确定启用此 API Key？', '提示', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
         center: true,
@@ -216,12 +251,7 @@ export default {
       })
     },
     disableUserApiKey(row) {
-      let msg = '确定停用此ApiKey？'
-      if (row.online !== 0) {
-        msg = '<strong>确定停用此ApiKey？</strong>'
-      }
-      this.$confirm(msg, '提示', {
-        dangerouslyUseHTMLString: true,
+      this.$confirm('确定停用此 API Key？', '提示', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
         center: true,
@@ -248,24 +278,20 @@ export default {
       })
     },
     resetUserApiKey(row) {
-      let msg = '确定重置此ApiKey？'
-      if (row.online !== 0) {
-        msg = '<strong>确定重置此ApiKey？</strong>'
-      }
-      this.$confirm(msg, '提示', {
-        dangerouslyUseHTMLString: true,
+      this.$confirm('轮换后旧 API Key 立即失效，新密钥只显示一次。确定继续？', '提示', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
         center: true,
         type: 'warning'
       }).then(() => {
         this.$store.dispatch('userApiKeys/reset', row.id)
-          .then(() => {
+          .then((createdKey) => {
             this.$message({
               showClose: true,
               message: '重置成功',
               type: 'success'
             })
+            this.showApiKeySecret(createdKey)
             this.getUserApiKeyList()
           })
           .catch((error) => {
@@ -280,12 +306,7 @@ export default {
       })
     },
     deleteUserApiKey(row) {
-      let msg = '确定删除此ApiKey？'
-      if (row.online !== 0) {
-        msg = '<strong>确定删除此ApiKey？</strong>'
-      }
-      this.$confirm(msg, '提示', {
-        dangerouslyUseHTMLString: true,
+      this.$confirm('确定删除此 API Key？', '提示', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
         center: true,
@@ -314,8 +335,45 @@ export default {
     close() {
       this.showDialog = false
     },
+    showApiKeySecret(createdKey) {
+      this.$refs.apiKeySecret.open(createdKey)
+    },
+    formatApiKey(row) {
+      if (!row || (!row.prefix && !row.last4)) {
+        return '-'
+      }
+      return `${row.prefix || ''}••••${row.last4 || ''}`
+    },
+    statusText(status) {
+      const statusMap = {
+        ACTIVE: '启用',
+        DISABLED: '停用',
+        REVOKED: '已撤销',
+        LEGACY: '待轮换'
+      }
+      return statusMap[status] || '未知'
+    },
+    statusTagType(status) {
+      const typeMap = {
+        ACTIVE: 'success',
+        DISABLED: 'info',
+        REVOKED: 'danger',
+        LEGACY: 'warning'
+      }
+      return typeMap[status] || 'info'
+    },
     formatTime(timestamp) {
-      return moment(timestamp).format('YYYY-MM-DD HH:mm:ss')
+      return timestamp ? moment(timestamp).format('YYYY-MM-DD HH:mm:ss') : '永不过期'
+    },
+    scopeSummary(row) {
+      const permissionCount = Array.isArray(row && row.permissionMenuIds)
+        ? row.permissionMenuIds.length
+        : 0
+      const resourceCount = Array.isArray(row && row.resourceGroupIds)
+        ? row.resourceGroupIds.length
+        : 0
+      const ipCount = Array.isArray(row && row.ipAllowlist) ? row.ipAllowlist.length : 0
+      return `功能 ${permissionCount} · 资源组 ${resourceCount} · IP ${ipCount || '不限'}`
     }
   }
 }

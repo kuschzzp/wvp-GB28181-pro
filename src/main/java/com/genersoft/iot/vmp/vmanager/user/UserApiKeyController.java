@@ -1,251 +1,184 @@
 package com.genersoft.iot.vmp.vmanager.user;
 
-import com.genersoft.iot.vmp.conf.exception.ControllerException;
+import com.genersoft.iot.vmp.auth.apikey.ApiKeyStatus;
+import com.genersoft.iot.vmp.auth.apikey.dto.ApiKeyCreatedResponse;
+import com.genersoft.iot.vmp.auth.apikey.dto.ApiKeyExpirationParser;
+import com.genersoft.iot.vmp.auth.apikey.dto.ApiKeyQuery;
+import com.genersoft.iot.vmp.auth.apikey.dto.ApiKeySummary;
+import com.genersoft.iot.vmp.auth.apikey.dto.ApiKeyScopeUpdateRequest;
+import com.genersoft.iot.vmp.auth.apikey.dto.ApiKeyScopeOptions;
+import com.genersoft.iot.vmp.auth.apikey.dto.CreateApiKeyCommand;
+import com.genersoft.iot.vmp.auth.apikey.dto.CreateApiKeyRequest;
+import com.genersoft.iot.vmp.auth.department.DepartmentScopeService;
+import com.genersoft.iot.vmp.auth.department.model.DepartmentScope;
+import com.genersoft.iot.vmp.auth.model.AuthPrincipal;
+import com.genersoft.iot.vmp.auth.service.CurrentPrincipalService;
 import com.genersoft.iot.vmp.conf.security.JwtUtils;
-import com.genersoft.iot.vmp.conf.security.SecurityUtils;
 import com.genersoft.iot.vmp.service.IUserApiKeyService;
-import com.genersoft.iot.vmp.service.IUserService;
-import com.genersoft.iot.vmp.storager.dao.dto.User;
-import com.genersoft.iot.vmp.storager.dao.dto.UserApiKey;
-import com.genersoft.iot.vmp.utils.DateUtil;
-import com.genersoft.iot.vmp.vmanager.bean.ErrorCode;
 import com.github.pagehelper.PageInfo;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.*;
+import jakarta.validation.Valid;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.time.Instant;
 
-@Tag(name = "用户ApiKey管理")
+@Tag(name = "用户 API Key 管理")
 @RestController
 @RequestMapping("/api/userApiKey")
 public class UserApiKeyController {
 
-    public static final int EXPIRATION_TIME = Integer.MAX_VALUE;
-    @Autowired
-    private IUserService userService;
+    private final IUserApiKeyService apiKeyService;
+    private final CurrentPrincipalService currentPrincipalService;
+    private final DepartmentScopeService departmentScopeService;
 
-    @Autowired
-    private IUserApiKeyService userApiKeyService;
+    public UserApiKeyController(
+            IUserApiKeyService apiKeyService,
+            CurrentPrincipalService currentPrincipalService,
+            DepartmentScopeService departmentScopeService) {
+        this.apiKeyService = apiKeyService;
+        this.currentPrincipalService = currentPrincipalService;
+        this.departmentScopeService = departmentScopeService;
+    }
 
-    /**
-     * 添加用户ApiKey
-     *
-     * @param userId
-     * @param app
-     * @param remark
-     * @param expiresAt
-     * @param enable
-     */
+    @PreAuthorize("@authz.require('system:apikey:add')")
+    @PostMapping
+    @Operation(summary = "创建 API Key（secret 仅返回本次）",
+            security = @SecurityRequirement(name = JwtUtils.HEADER))
+    public ApiKeyCreatedResponse create(@Valid @RequestBody CreateApiKeyRequest request) {
+        OwnerAccess access = ownerAccess(request.ownerId(), "system:apikey:add");
+        return apiKeyService.create(access.ownerId(), request.toCommand(), access.scope());
+    }
+
+    @PreAuthorize("@authz.require('system:apikey:add')")
     @PostMapping("/add")
-    @Operation(summary = "添加用户ApiKey", security = @SecurityRequirement(name = JwtUtils.HEADER))
-    @Parameter(name = "userId", description = "用户Id", required = true)
-    @Parameter(name = "app", description = "应用名称", required = false)
-    @Parameter(name = "remark", description = "备注信息", required = false)
-    @Parameter(name = "expiredAt", description = "过期时间（不传代表永不过期）", required = false)
-    @Transactional
-    public synchronized void add(
-            @RequestParam(required = true) int userId,
+    @Operation(summary = "创建 API Key（旧版参数兼容）",
+            security = @SecurityRequirement(name = JwtUtils.HEADER))
+    public ApiKeyCreatedResponse addLegacy(
+            @RequestParam(required = false) Long userId,
             @RequestParam(required = false) String app,
             @RequestParam(required = false) String remark,
             @RequestParam(required = false) String expiresAt,
-            @RequestParam(required = false) Boolean enable
-    ) {
-        User user = userService.getUserById(userId);
-        if (user == null) {
-            throw new ControllerException(ErrorCode.ERROR400.getCode(), "用户不存在");
-        }
-
-        Long expirationTime = null;
-        if (expiresAt != null) {
-            expirationTime = DateUtil.yyyy_MM_dd_HH_mm_ssToTimestampMs(expiresAt);
-            long difference = (expirationTime - System.currentTimeMillis()) / (60 * 1000);
-            if (difference < 0) {
-                throw new ControllerException(ErrorCode.ERROR400.getCode(), "过期时间不能早于当前时间");
-            }
-        }
-
-        UserApiKey userApiKey = new UserApiKey();
-        userApiKey.setUserId(userId);
-        userApiKey.setApp(app);
-        userApiKey.setApiKey(null);
-        userApiKey.setRemark(remark);
-        userApiKey.setExpiredAt(expirationTime != null ? expirationTime : 0);
-        userApiKey.setEnable(enable != null ? enable : false);
-        userApiKey.setCreateTime(DateUtil.getNow());
-        userApiKey.setUpdateTime(DateUtil.getNow());
-
-        int addResult = userApiKeyService.addApiKey(userApiKey);
-
-        if (addResult <= 0) {
-            throw new ControllerException(ErrorCode.ERROR100);
-        }
-
-        String apiKey;
-        do {
-            Map<String, Object> extra = new HashMap<>(1);
-            extra.put("apiKeyId", userApiKey.getId());
-            apiKey = JwtUtils.createToken(user.getUsername(), expirationTime, extra);
-        } while (userApiKeyService.isApiKeyExists(apiKey));
-
-        int resetResult = userApiKeyService.reset(userApiKey.getId(), apiKey);
-
-        if (resetResult <= 0) {
-            throw new ControllerException(ErrorCode.ERROR100);
-        }
+            @RequestParam(required = false, defaultValue = "false") boolean enable) {
+        Instant expiration = expiresAt == null || expiresAt.isBlank()
+                ? null
+                : ApiKeyExpirationParser.parse(expiresAt);
+        OwnerAccess access = ownerAccess(userId, "system:apikey:add");
+        return apiKeyService.create(
+                access.ownerId(),
+                new CreateApiKeyCommand(app, remark, expiration, enable),
+                access.scope());
     }
 
-    /**
-     * 分页查询ApiKey
-     *
-     * @param page  当前页
-     * @param count 每页查询数量
-     * @return 分页ApiKey列表
-     */
+    @PreAuthorize("@authz.require('system:apikey:list')")
     @GetMapping("/userApiKeys")
-    @Operation(summary = "分页查询用户", security = @SecurityRequirement(name = JwtUtils.HEADER))
-    @Parameter(name = "page", description = "当前页", required = true)
-    @Parameter(name = "count", description = "每页查询数量", required = true)
-    @Transactional
-    public PageInfo<UserApiKey> userApiKeys(@RequestParam(required = true) int page, @RequestParam(required = true) int count, @RequestParam(required = false) Integer userId) {
-        return userApiKeyService.getUserApiKeys(page, count, userId);
+    @Operation(summary = "分页查询 API Key 摘要",
+            security = @SecurityRequirement(name = JwtUtils.HEADER))
+    public PageInfo<ApiKeySummary> page(
+            @RequestParam int page,
+            @RequestParam int count,
+            @RequestParam(required = false) Long userId) {
+        OwnerAccess access = ownerAccess(userId, "system:apikey:list");
+        return apiKeyService.pageOwnKeys(
+                access.ownerId(), new ApiKeyQuery(page, count), access.scope());
     }
 
+    @PreAuthorize("@authz.require('system:apikey:list')")
+    @GetMapping("/scope-options")
+    @Operation(summary = "查询目标用户可配置的 API Key 权限范围选项",
+            security = @SecurityRequirement(name = JwtUtils.HEADER))
+    public ApiKeyScopeOptions scopeOptions(
+            @RequestParam(required = false) Long userId) {
+        OwnerAccess access = ownerAccess(userId, "system:apikey:list");
+        return apiKeyService.scopeOptions(access.ownerId(), access.scope());
+    }
+
+    @PreAuthorize("@authz.require('system:apikey:disable')")
     @PostMapping("/enable")
-    @Operation(summary = "启用用户ApiKey", security = @SecurityRequirement(name = JwtUtils.HEADER))
-    @Parameter(name = "id", description = "用户ApiKeyId", required = true)
-    @Transactional
-    public void enable(@RequestParam(required = true) Integer id) {
-        // 获取当前登录用户id
-        int currenRoleId = SecurityUtils.getUserInfo().getRole().getId();
-        if (currenRoleId != 1) {
-            // 只用角色id为1才可以管理UserApiKey
-            throw new ControllerException(ErrorCode.ERROR403);
-        }
-        UserApiKey userApiKey = userApiKeyService.getUserApiKeyById(id);
-        if (userApiKey == null) {
-            throw new ControllerException(ErrorCode.ERROR400.getCode(), "ApiKey不存在");
-        }
-
-        int enableResult = userApiKeyService.enable(id);
-
-        if (enableResult <= 0) {
-            throw new ControllerException(ErrorCode.ERROR100);
-        }
+    public void enable(
+            @RequestParam long id,
+            @RequestParam(required = false) Long userId) {
+        OwnerAccess access = ownerAccess(userId, "system:apikey:disable");
+        apiKeyService.changeStatus(
+                access.ownerId(), id, ApiKeyStatus.ACTIVE, access.scope());
     }
 
+    @PreAuthorize("@authz.require('system:apikey:disable')")
     @PostMapping("/disable")
-    @Operation(summary = "停用用户ApiKey", security = @SecurityRequirement(name = JwtUtils.HEADER))
-    @Parameter(name = "id", description = "用户ApiKeyId", required = true)
-    @Transactional
-    public void disable(@RequestParam(required = true) Integer id) {
-        // 获取当前登录用户id
-        int currenRoleId = SecurityUtils.getUserInfo().getRole().getId();
-        if (currenRoleId != 1) {
-            // 只用角色id为1才可以管理UserApiKey
-            throw new ControllerException(ErrorCode.ERROR403);
-        }
-        UserApiKey userApiKey = userApiKeyService.getUserApiKeyById(id);
-        if (userApiKey == null) {
-            throw new ControllerException(ErrorCode.ERROR400.getCode(), "ApiKey不存在");
-        }
-
-        int disableResult = userApiKeyService.disable(id);
-
-        if (disableResult <= 0) {
-            throw new ControllerException(ErrorCode.ERROR100);
-        }
+    public void disable(
+            @RequestParam long id,
+            @RequestParam(required = false) Long userId) {
+        OwnerAccess access = ownerAccess(userId, "system:apikey:disable");
+        apiKeyService.changeStatus(
+                access.ownerId(), id, ApiKeyStatus.DISABLED, access.scope());
     }
 
+    @PreAuthorize("@authz.require('system:apikey:rotate')")
     @PostMapping("/reset")
-    @Operation(summary = "重置用户ApiKey", security = @SecurityRequirement(name = JwtUtils.HEADER))
-    @Parameter(name = "id", description = "用户ApiKeyId", required = true)
-    @Transactional
-    public void reset(@RequestParam(required = true) Integer id) {
-        // 获取当前登录用户id
-        int currenRoleId = SecurityUtils.getUserInfo().getRole().getId();
-        if (currenRoleId != 1) {
-            // 只用角色id为1才可以管理UserApiKey
-            throw new ControllerException(ErrorCode.ERROR403);
-        }
-        UserApiKey userApiKey = userApiKeyService.getUserApiKeyById(id);
-        if (userApiKey == null) {
-            throw new ControllerException(ErrorCode.ERROR400.getCode(), "ApiKey不存在");
-        }
-        User user = userService.getUserById(userApiKey.getUserId());
-        if (user == null) {
-            throw new ControllerException(ErrorCode.ERROR400.getCode(), "用户不存在");
-        }
-        Long expirationTime = null;
-        if (userApiKey.getExpiredAt() > 0) {
-            long timestamp = userApiKey.getExpiredAt();
-            expirationTime = (timestamp - System.currentTimeMillis()) / (60 * 1000);
-            if (expirationTime < 0) {
-                throw new ControllerException(ErrorCode.ERROR400.getCode(), "ApiKey已失效");
-            }
-        }
-        String apiKey;
-        do {
-            Map<String, Object> extra = new HashMap<>(1);
-            extra.put("apiKeyId", userApiKey.getId());
-            apiKey = JwtUtils.createToken(user.getUsername(), expirationTime, extra);
-        } while (userApiKeyService.isApiKeyExists(apiKey));
-
-        int resetResult = userApiKeyService.reset(id, apiKey);
-
-        if (resetResult <= 0) {
-            throw new ControllerException(ErrorCode.ERROR100);
-        }
+    @Operation(summary = "轮换 API Key（新 secret 仅返回本次）",
+            security = @SecurityRequirement(name = JwtUtils.HEADER))
+    public ApiKeyCreatedResponse rotate(
+            @RequestParam long id,
+            @RequestParam(required = false) Long userId) {
+        OwnerAccess access = ownerAccess(userId, "system:apikey:rotate");
+        return apiKeyService.rotate(access.ownerId(), id, access.scope());
     }
 
+    @PreAuthorize("@authz.require('system:apikey:rotate')")
     @PostMapping("/remark")
-    @Operation(summary = "备注用户ApiKey", security = @SecurityRequirement(name = JwtUtils.HEADER))
-    @Parameter(name = "id", description = "用户ApiKeyId", required = true)
-    @Parameter(name = "remark", description = "用户ApiKey备注", required = false)
-    @Transactional
-    public void remark(@RequestParam(required = true) Integer id, @RequestParam(required = false) String remark) {
-        // 获取当前登录用户id
-        int currenRoleId = SecurityUtils.getUserInfo().getRole().getId();
-        if (currenRoleId != 1) {
-            // 只用角色id为1才可以管理UserApiKey
-            throw new ControllerException(ErrorCode.ERROR403);
-        }
-        UserApiKey userApiKey = userApiKeyService.getUserApiKeyById(id);
-        if (userApiKey == null) {
-            throw new ControllerException(ErrorCode.ERROR400.getCode(), "ApiKey不存在");
-        }
-        int remarkResult = userApiKeyService.remark(id, remark);
-
-        if (remarkResult <= 0) {
-            throw new ControllerException(ErrorCode.ERROR100);
-        }
+    public void remark(
+            @RequestParam long id,
+            @RequestParam(required = false) Long userId,
+            @RequestParam(required = false) String remark) {
+        OwnerAccess access = ownerAccess(userId, "system:apikey:rotate");
+        apiKeyService.updateRemark(access.ownerId(), id, remark, access.scope());
     }
 
+    @PreAuthorize("@authz.require('system:apikey:rotate')")
+    @PutMapping("/{id}/scope")
+    @Operation(summary = "修改 API Key 功能权限、视频资源组和 IP 白名单",
+            security = @SecurityRequirement(name = JwtUtils.HEADER))
+    public void updateScope(
+            @PathVariable long id,
+            @RequestParam(required = false) Long userId,
+            @Valid @RequestBody ApiKeyScopeUpdateRequest request) {
+        OwnerAccess access = ownerAccess(userId, "system:apikey:rotate");
+        apiKeyService.updateScope(
+                access.ownerId(), id, request.toCommand(), access.scope());
+    }
+
+    @PreAuthorize("@authz.require('system:apikey:remove')")
     @DeleteMapping("/delete")
-    @Operation(summary = "删除用户ApiKey", security = @SecurityRequirement(name = JwtUtils.HEADER))
-    @Parameter(name = "id", description = "用户ApiKeyId", required = true)
-    @Transactional
-    public void delete(@RequestParam(required = true) Integer id) {
-        // 获取当前登录用户id
-        int currenRoleId = SecurityUtils.getUserInfo().getRole().getId();
-        if (currenRoleId != 1) {
-            // 只用角色id为1才可以管理UserApiKey
-            throw new ControllerException(ErrorCode.ERROR403);
-        }
-        UserApiKey userApiKey = userApiKeyService.getUserApiKeyById(id);
-        if (userApiKey == null) {
-            throw new ControllerException(ErrorCode.ERROR400.getCode(), "ApiKey不存在");
-        }
+    public void delete(
+            @RequestParam long id,
+            @RequestParam(required = false) Long userId) {
+        OwnerAccess access = ownerAccess(userId, "system:apikey:remove");
+        apiKeyService.delete(access.ownerId(), id, access.scope());
+    }
 
-        int deleteResult = userApiKeyService.delete(id);
-
-        if (deleteResult <= 0) {
-            throw new ControllerException(ErrorCode.ERROR100);
+    private OwnerAccess ownerAccess(Long requestedOwnerId, String permissionCode) {
+        AuthPrincipal principal = currentPrincipalService.requireCurrent();
+        if (principal.userId() == null || principal.userId() <= 0) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "API Key 管理主体必须绑定有效用户");
         }
+        long ownerId = requestedOwnerId == null ? principal.userId() : requestedOwnerId;
+        DepartmentScope scope = ownerId == principal.userId()
+                ? DepartmentScope.self(principal.userId())
+                : departmentScopeService.resolveDecisionScope(principal, permissionCode);
+        return new OwnerAccess(ownerId, scope);
+    }
+
+    private record OwnerAccess(long ownerId, DepartmentScope scope) {
     }
 }

@@ -38,6 +38,7 @@
                   {{ getFileShowName(item) }}
                 </el-tag>
                 <a
+                  v-if="$auth.hasPermi(['video:record:download'])"
                   class="el-icon-download"
                   style="color: #409EFF;font-weight: 600;margin-left: 10px;"
                   target="_blank"
@@ -49,7 +50,7 @@
           </div>
         </div>
       </div>
-      <div id="playerBox" style="width: 100%;">
+      <div v-if="$auth.hasPermi(['video:record:play'])" id="playerBox" style="width: 100%;">
         <div :class="{
           'play-box': true,
           'play-box-fullscreen': isFullScreen,
@@ -61,31 +62,11 @@
             <div class="el-icon-loading" />
             <div style="width: 100%; line-height: 2rem">正在加载</div>
           </div>
-          <jessibucaPlayer
-            v-if="activePlayer === 'jessibuca'"
+          <player-tabs
             ref="recordVideoPlayer"
-            :has-audio="true"
-            :height="'calc(100vh - 90px)'"
-            :show-button="false"
-            autoplay
-            @playStatusChange="playingChange"
-            @playTimeChange="showPlayTimeChange"
-          />
-          <rtcPlayer
-            v-if="activePlayer === 'webRTC'"
-            ref="recordVideoPlayer"
-            :has-audio="true"
-            :show-controls="false"
             style="height: calc(100vh - 220px)"
-            autoplay
-            @playStatusChange="playingChange"
-            @playTimeChange="showPlayTimeChange"
-          />
-          <h265web
-            v-if="activePlayer === 'h265web'"
-            ref="recordVideoPlayer"
-            :height="'calc(100vh - 220px)'"
             :show-button="false"
+            :show-tab="false"
             :has-audio="true"
             @playStatusChange="playingChange"
             @playTimeChange="showPlayTimeChange"
@@ -238,6 +219,13 @@
           </div>
         </div>
       </div>
+      <el-alert
+        v-else
+        title="当前账号可以查看录像列表，但没有设备录像播放权限。"
+        type="info"
+        :closable="false"
+        show-icon
+      />
     </div>
     <record-download ref="recordDownload" />
     <chooseTimeRange ref="chooseTimeRange" />
@@ -246,9 +234,7 @@
 
 <script>
 
-import h265web from '../../common/h265web.vue'
-import jessibucaPlayer from '../../common/jessibuca.vue'
-import rtcPlayer from '../../common/rtcPlayer.vue'
+import playerTabs from '../../common/playerTabs.vue'
 import VideoTimeline from '../../common/VideoTimeLine/index.vue'
 import recordDownload from '../../dialog/recordDownload.vue'
 import ChooseTimeRange from '../../dialog/chooseTimeRange.vue'
@@ -258,7 +244,7 @@ import screenfull from 'screenfull'
 export default {
   name: 'DeviceRecord',
   components: {
-    h265web, jessibucaPlayer, rtcPlayer, VideoTimeline, recordDownload, ChooseTimeRange
+    playerTabs, VideoTimeline, recordDownload, ChooseTimeRange
   },
   data() {
     return {
@@ -293,11 +279,6 @@ export default {
       showOtherSpeed: true,
       timeSegments: [],
       activePlayer: 'jessibuca',
-      playerUrls: {
-        jessibuca: ['ws_flv', 'wss_flv'],
-        webRTC: ['rtc', 'rtcs'],
-        h265web: ['ws_flv', 'wss_flv']
-      },
       pickerOptions: {
         cellClassName: (date) => {
           // 通过显示一个点标识这一天有录像
@@ -355,12 +336,7 @@ export default {
       if (this.activePlayer === player) return
       this.activePlayer = player
       if (this.streamInfo) {
-        this.videoUrl = this.getUrlByStreamInfo()
-        this.$nextTick(() => {
-          if (this.$refs.recordVideoPlayer) {
-            this.$refs.recordVideoPlayer.play(this.videoUrl)
-          }
-        })
+        this.$refs.recordVideoPlayer && this.$refs.recordVideoPlayer.switchPlayer(player)
       }
     },
     sidebarControl() {
@@ -370,6 +346,7 @@ export default {
       this.$refs.recordVideoPlayer.screenshot()
     },
     chooseTimeForRecord() {
+      if (!this.$auth.hasPermi(['video:record:download'])) return
       let startTime = this.startTime
       let endTime = this.endTime
       if (this.detailFiles.length > 0) {
@@ -403,6 +380,7 @@ export default {
       this.chooseFile(this.chooseFileIndex + 1)
     },
     changePlaySpeed(speed) {
+      if (!this.$auth.hasPermi(['video:record:play'])) return
       console.log(this.streamInfo)
       console.log(speed)
       // 倍速播放
@@ -434,7 +412,7 @@ export default {
       this.$refs.recordVideoPlayer.pause()
     },
     play() {
-      if (this.$refs.recordVideoPlayer.loaded) {
+      if (this.$refs.recordVideoPlayer.isLoaded()) {
         this.$refs.recordVideoPlayer.unPause()
       } else {
         this.playRecord(this.showTimeValue, this.endTime)
@@ -447,8 +425,9 @@ export default {
         this.isFullScreen = false
         return
       }
-      const playerWidth = this.$refs.recordVideoPlayer.playerWidth
-      const playerHeight = this.$refs.recordVideoPlayer.playerHeight
+      const playerWrapper = this.$refs.recordVideoPlayer.$refs.playerWrapper
+      const playerWidth = playerWrapper ? playerWrapper.clientWidth : 0
+      const playerHeight = playerWrapper ? playerWrapper.clientHeight : 0
       screenfull.request(document.getElementById('playerBox'))
       screenfull.on('change', (event) => {
         this.isFullScreen = screenfull.isFullscreen
@@ -516,12 +495,14 @@ export default {
       }
     },
     chooseFile(index) {
+      if (!this.$auth.hasPermi(['video:record:play'])) return
       this.chooseFileIndex = index
       const chooseFile = this.detailFiles[this.chooseFileIndex]
       this.playTime = new Date(chooseFile.startTime).getTime()
       this.playRecord(chooseFile.startTime, this.endTime)
     },
     playRecord(startTime, endTime) {
+      if (!this.$auth.hasPermi(['video:record:play'])) return
       if (this.streamInfo !== null) {
         this.stopPlayRecord(() => {
           this.playRecord(startTime, endTime)
@@ -531,26 +512,17 @@ export default {
         this.$store.dispatch('playback/play', [this.deviceId, this.channelId, startTime, endTime])
           .then(data => {
             this.streamInfo = data
-            this.videoUrl = this.getUrlByStreamInfo()
             this.hasAudio = this.streamInfo.tracks && this.streamInfo.tracks.length > 1
             this.$nextTick(() => {
               if (this.$refs.recordVideoPlayer) {
-                this.$refs.recordVideoPlayer.play(this.videoUrl)
+                this.$refs.recordVideoPlayer.setStreamInfo(data.playable)
               }
             })
           })
       }
     },
-    getUrlByStreamInfo() {
-      const keys = this.playerUrls[this.activePlayer]
-      if (location.protocol === 'https:') {
-        this.videoUrl = this.streamInfo[keys[1]]
-      } else {
-        this.videoUrl = this.streamInfo[keys[0]]
-      }
-      return this.videoUrl
-    },
     downloadFile(row) {
+      if (!this.$auth.hasPermi(['video:record:download'])) return
       if (!row) {
         const startTimeStr = moment(new Date(this.chooseDate + ' 00:00:00').getTime() + this.playTime[0] * 1000).format('YYYY-MM-DD HH:mm:ss')
         const endTimeStr = moment(new Date(this.chooseDate + ' 00:00:00').getTime() + this.playTime[1] * 1000).format('YYYY-MM-DD HH:mm:ss')

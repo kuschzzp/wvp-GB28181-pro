@@ -74,6 +74,11 @@
 
 <script>
 import playerTabs from '../common/playerTabs.vue'
+import {
+  createMediaSourceCancelSource,
+  isMediaSourceCancelled,
+  issueMediaSource
+} from '@/utils/mediaSource'
 
 export default {
   name: 'ChAudioTalk',
@@ -91,6 +96,8 @@ export default {
       broadcastRtc: null,
       talkAudioRtc: null,
       talkAudioRetryTimer: null,
+      talkAudioRenewTimer: null,
+      talkAudioSourceRequest: null,
       talkAudioFailed: false,
       talkAudioPlayStream: null,
       playConnected: false
@@ -122,7 +129,7 @@ export default {
           this.showPlayer = true
           this.$nextTick(() => {
             if (this.$refs.playerTabs) {
-              this.$refs.playerTabs.setStreamInfo(data.transcodeStream || data)
+              this.$refs.playerTabs.setStreamInfo((data.transcodeStream || data).playable)
             }
           })
         })
@@ -230,56 +237,48 @@ export default {
     },
     startWebrtcPush(pushStream) {
       if (!pushStream) return
-      let url = location.protocol === 'https:' ? pushStream.rtcs : (pushStream.rtc || pushStream.rtcs)
+      const url = location.protocol === 'https:' ? pushStream.rtcs : (pushStream.rtc || pushStream.rtcs)
       if (!url) {
         console.warn('[ChAudioTalk] 未找到RTC推流地址')
         return
       }
 
-      this.$store.dispatch('user/getUserInfo').then(user => {
-        if (user && user.pushKey) {
-          url += '&sign=' + user.pushKey
-        } else {
-          console.warn('[ChAudioTalk] 未获取到pushKey，推流鉴权可能失败')
+      if (this.broadcastRtc) {
+        this.broadcastRtc.close()
+      }
+
+      this.broadcastRtc = new ZLMRTCClient.Endpoint({
+        debug: true,
+        zlmsdpUrl: url,
+        simulecast: false,
+        useCamera: false,
+        audioEnable: true,
+        videoEnable: false,
+        recvOnly: false
+      })
+
+      this.broadcastRtc.on(ZLMRTCClient.Events.WEBRTC_NOT_SUPPORT, () => {
+        this.$message({ showClose: true, message: '不支持WebRTC, 无法进行语音对讲', type: 'error' })
+        this.talkStatus = -1
+      })
+      this.broadcastRtc.on(ZLMRTCClient.Events.WEBRTC_ICE_CANDIDATE_ERROR, () => {
+        this.$message({ showClose: true, message: 'ICE协商出错', type: 'error' })
+        this.talkStatus = -1
+      })
+      this.broadcastRtc.on(ZLMRTCClient.Events.WEBRTC_OFFER_ANWSER_EXCHANGE_FAILED, () => {
+        this.$message({ showClose: true, message: 'offer/answer交换失败', type: 'error' })
+        this.talkStatus = -1
+      })
+      this.broadcastRtc.on(ZLMRTCClient.Events.WEBRTC_ON_CONNECTION_STATE_CHANGE, (e) => {
+        if (e === 'connecting') {
+          this.talkStatus = 0
+        } else if (e === 'connected') {
+          this.talkStatus = 1
+        } else if (e === 'disconnected') {
+          this.talkStatus = -1
         }
-
-        if (this.broadcastRtc) {
-          this.broadcastRtc.close()
-        }
-
-        this.broadcastRtc = new ZLMRTCClient.Endpoint({
-          debug: true,
-          zlmsdpUrl: url,
-          simulecast: false,
-          useCamera: false,
-          audioEnable: true,
-          videoEnable: false,
-          recvOnly: false
-        })
-
-        this.broadcastRtc.on(ZLMRTCClient.Events.WEBRTC_NOT_SUPPORT, () => {
-          this.$message({ showClose: true, message: '不支持WebRTC, 无法进行语音对讲', type: 'error' })
-          this.talkStatus = -1
-        })
-        this.broadcastRtc.on(ZLMRTCClient.Events.WEBRTC_ICE_CANDIDATE_ERROR, () => {
-          this.$message({ showClose: true, message: 'ICE协商出错', type: 'error' })
-          this.talkStatus = -1
-        })
-        this.broadcastRtc.on(ZLMRTCClient.Events.WEBRTC_OFFER_ANWSER_EXCHANGE_FAILED, () => {
-          this.$message({ showClose: true, message: 'offer/answer交换失败', type: 'error' })
-          this.talkStatus = -1
-        })
-        this.broadcastRtc.on(ZLMRTCClient.Events.WEBRTC_ON_CONNECTION_STATE_CHANGE, (e) => {
-          if (e === 'connecting') {
-            this.talkStatus = 0
-          } else if (e === 'connected') {
-            this.talkStatus = 1
-          } else if (e === 'disconnected') {
-            this.talkStatus = -1
-          }
-        })
-      }).catch(e => {
-        console.warn('[ChAudioTalk] 获取用户pushKey失败', e)
+      })
+      this.broadcastRtc.on(ZLMRTCClient.Events.CAPTURE_STREAM_FAILED, () => {
         this.talkStatus = -1
       })
     },
@@ -291,9 +290,8 @@ export default {
         clearTimeout(this.talkAudioRetryTimer)
       }
 
-      const url = location.protocol === 'https:' ? playStream.rtcs : playStream.rtc
-      if (!url) {
-        console.warn('[ChAudioTalk] 无可用的设备音频播放地址')
+      if (!playStream.playable) {
+        console.warn('[ChAudioTalk] 缺少设备音频可播放资源引用')
         return
       }
       this.talkAudioRetryTimer = setTimeout(() => {
@@ -301,6 +299,9 @@ export default {
       }, 800)
     },
     async pollMediaInfoAndPlay(playStream) {
+      this.cancelTalkAudioSourceRequest()
+      const cancelSource = createMediaSourceCancelSource()
+      this.talkAudioSourceRequest = cancelSource
       try {
         const data = await this.$store.dispatch('server/getMediaInfo', {
           app: playStream.app,
@@ -308,20 +309,42 @@ export default {
           mediaServerId: playStream.mediaServerId
         })
         if (data) {
-          const url = location.protocol === 'https:' ? playStream.rtcs : playStream.rtc
-          this.startTalkAudioByRtc(url)
+          const lease = await issueMediaSource(
+            playStream.playable, 'WEBRTC', cancelSource.token)
+          if (this.talkAudioSourceRequest !== cancelSource) return
+          this.startTalkAudioByRtc(lease.url, playStream)
+          this.scheduleTalkAudioRenewal(playStream, lease.expiresAt)
         } else {
           throw new Error('no data')
         }
       } catch (e) {
+        if (isMediaSourceCancelled(e)) return
         if (this.talkStatus === 1 || this.talkStatus === 0) {
           this.talkAudioRetryTimer = setTimeout(() => {
             this.pollMediaInfoAndPlay(playStream)
           }, 800)
         }
+      } finally {
+        if (this.talkAudioSourceRequest === cancelSource) {
+          this.talkAudioSourceRequest = null
+        }
       }
     },
-    startTalkAudioByRtc(url) {
+    scheduleTalkAudioRenewal(playStream, expiresAt) {
+      if (this.talkAudioRenewTimer) clearTimeout(this.talkAudioRenewTimer)
+      const delay = Math.max(1000, Date.parse(expiresAt) - Date.now() - 15000)
+      this.talkAudioRenewTimer = setTimeout(() => {
+        this.talkAudioRenewTimer = null
+        this.pollMediaInfoAndPlay(playStream)
+      }, delay)
+    },
+    cancelTalkAudioSourceRequest() {
+      if (this.talkAudioSourceRequest) {
+        this.talkAudioSourceRequest.cancel('对讲音频媒体源已切换')
+        this.talkAudioSourceRequest = null
+      }
+    },
+    startTalkAudioByRtc(url, playStream) {
       this.talkAudioFailed = false
       this.talkAudioRtc = new ZLMRTCClient.Endpoint({
         debug: false,
@@ -337,9 +360,9 @@ export default {
 
       this.talkAudioRtc.on(ZLMRTCClient.Events.WEBRTC_OFFER_ANWSER_EXCHANGE_FAILED, (e) => {
         console.warn('[ChAudioTalk] 播放流offer失败:', e?.code, e?.msg)
-        if (e && e.code == -400 && e.msg == '流不存在') {
+        if (e && e.code === -400 && e.msg === '流不存在') {
           this.talkAudioRetryTimer = setTimeout(() => {
-            this.startTalkAudioByRtc(url)
+            this.pollMediaInfoAndPlay(playStream)
           }, 1000)
         }
       })
@@ -362,7 +385,7 @@ export default {
           this.talkAudioFailed = true
           if (this.talkStatus === 1) {
             this.talkAudioRetryTimer = setTimeout(() => {
-              this.startTalkAudioByRtc(url)
+              this.pollMediaInfoAndPlay(playStream)
             }, 2000)
           }
         }
@@ -384,6 +407,11 @@ export default {
         clearTimeout(this.talkAudioRetryTimer)
         this.talkAudioRetryTimer = null
       }
+      if (this.talkAudioRenewTimer) {
+        clearTimeout(this.talkAudioRenewTimer)
+        this.talkAudioRenewTimer = null
+      }
+      this.cancelTalkAudioSourceRequest()
 
       this.talkAudioFailed = false
       this.talkAudioPlayStream = null

@@ -22,12 +22,13 @@
 
         <div class="control-side">
           <channelPtzPanel
+            v-if="$auth.hasPermi(['video:ptz:control'])"
             :channel-id="channelId"
             @drag-zoom-start="toggleDragZoom"
           />
 
           <el-tabs v-model="tabActiveName" @tab-click="tabHandleClick" class="control-tabs">
-            <el-tab-pane label="预置位" name="preset">
+            <el-tab-pane v-if="$auth.hasPermi(['video:ptz:preset'])" label="预置位" name="preset">
               <channelPreset
                 v-if="tabActiveName === 'preset'"
                 :channel-id="channelId"
@@ -35,7 +36,7 @@
               />
             </el-tab-pane>
             <el-tab-pane label="实时视频" name="media">
-              <streamMediaPanel v-if="tabActiveName === 'media'" :player-url="playerUrlInfo.playerUrl" :play-url="playerUrlInfo.playUrl" :stream-info="streamInfo" />
+              <streamMediaPanel v-if="tabActiveName === 'media'" :playable-ref="playableRef" :expires-at="playerUrlInfo.expiresAt" />
             </el-tab-pane>
             <el-tab-pane label="编码信息" name="codec">
               <mediaInfo v-if="tabActiveName === 'codec'" ref="mediaInfo" :app="app" :stream="streamId" :media-server-id="mediaServerId" />
@@ -73,10 +74,10 @@ export default {
       isLoging: false,
       showVideoDialog: false,
       streamInfo: null,
+      playableRef: null,
       playerHeight: '48vh',
       playerUrlInfo: {
-        playerUrl: null,
-        playUrl: null
+        expiresAt: null
       },
       dragZoomDirection: ''
     }
@@ -91,7 +92,10 @@ export default {
     },
     openDialog(tab, channelId, param) {
       if (this.showVideoDialog) return
-      this.tabActiveName = tab || 'preset'
+      const requestedTab = tab || 'preset'
+      this.tabActiveName = requestedTab === 'preset' && !this.$auth.hasPermi(['video:ptz:preset'])
+        ? 'media'
+        : requestedTab
       this.channelId = channelId
       this.streamId = ''
       this.mediaServerId = ''
@@ -102,7 +106,9 @@ export default {
       }
     },
     play(streamInfo, hasAudio) {
+      if (!this.$auth.hasPermi(['video:channel:play'])) return
       this.streamInfo = streamInfo
+      this.playableRef = (streamInfo.transcodeStream || streamInfo).playable
       this.hasAudio = hasAudio
       this.isLoging = false
       this.streamId = streamInfo.stream
@@ -111,7 +117,7 @@ export default {
       this.showVideoDialog = true
       this.$nextTick(() => {
         if (this.$refs.playerTabs) {
-          this.$refs.playerTabs.setStreamInfo(streamInfo.transcodeStream || streamInfo)
+          this.$refs.playerTabs.setStreamInfo(this.playableRef)
         }
       })
     },
@@ -123,9 +129,12 @@ export default {
         this.$refs.playerTabs.stop()
       }
       this.videoUrl = ''
+      this.playableRef = null
       this.showVideoDialog = false
     },
     toggleDragZoom(direction) {
+      if (!this.$auth.hasPermi(['video:ptz:control'])) return
+      if (!this.$refs.playerTabs) return
       this.dragZoomDirection = direction
       this.$refs.playerTabs.startDragZoom((params) => {
         params.channelId = this.channelId

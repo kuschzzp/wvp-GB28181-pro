@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.gb28181.dao;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.gb28181.bean.*;
 import com.genersoft.iot.vmp.gb28181.controller.bean.Extent;
 import com.genersoft.iot.vmp.gb28181.dao.provider.ChannelProvider;
@@ -9,6 +10,7 @@ import com.genersoft.iot.vmp.gb28181.dao.provider.H2CommonChannelUpsertProvider;
 import com.genersoft.iot.vmp.service.bean.GPSMsgInfo;
 import com.genersoft.iot.vmp.streamPush.bean.StreamPush;
 import com.genersoft.iot.vmp.web.custom.bean.CameraChannel;
+import com.genersoft.iot.vmp.web.custom.bean.CameraCount;
 import com.genersoft.iot.vmp.web.custom.bean.CameraGroup;
 import com.genersoft.iot.vmp.web.custom.bean.Point;
 import org.apache.ibatis.annotations.*;
@@ -266,13 +268,15 @@ public interface CommonGBChannelMapper {
 
     @SelectProvider(type = ChannelProvider.class, method = "queryListByCivilCode")
     List<CommonGBChannel> queryListByCivilCode(@Param("query") String query, @Param("online") Boolean online,
-                                               @Param("dataType") Integer dataType, @Param("civilCode") String civilCode);
+                                               @Param("dataType") Integer dataType, @Param("civilCode") String civilCode,
+                                               @Param("scope") VideoScopeQuery scope);
 
 
 
     @SelectProvider(type = ChannelProvider.class, method = "queryListByParentId")
     List<CommonGBChannel> queryListByParentId(@Param("query") String query, @Param("online") Boolean online,
-                                              @Param("dataType") Integer dataType, @Param("groupDeviceId") String groupDeviceId);
+                                              @Param("dataType") Integer dataType, @Param("groupDeviceId") String groupDeviceId,
+                                              @Param("scope") VideoScopeQuery scope);
 
 
 
@@ -483,7 +487,8 @@ public interface CommonGBChannelMapper {
     @SelectProvider(type = ChannelProvider.class, method = "queryList")
     List<CommonGBChannel> queryList(@Param("query") String query, @Param("online") Boolean online,
                                     @Param("hasRecordPlan") Boolean hasRecordPlan, @Param("dataType") Integer dataType,
-                                    @Param("civilCode") String civilCode, @Param("parentDeviceId") String parentDeviceId);
+                                    @Param("civilCode") String civilCode, @Param("parentDeviceId") String parentDeviceId,
+                                    @Param("scope") VideoScopeQuery scope);
 
     @Update(value = {" <script>" +
             " UPDATE wvp_device_channel " +
@@ -573,20 +578,48 @@ public interface CommonGBChannelMapper {
                                                        @Param("dataType") Integer dataType, @Param("online") Boolean online,
                                                        @Param("hasLink") Boolean hasLink);
 
+    @SelectProvider(type = ChannelProvider.class, method = "queryForRecordPlanForWebList")
+    List<CommonGBChannel> queryForRecordPlanForWebListScoped(
+            @Param("planId") Integer planId,
+            @Param("query") String query,
+            @Param("dataType") Integer dataType,
+            @Param("online") Boolean online,
+            @Param("hasLink") Boolean hasLink,
+            @Param("scope") VideoScopeQuery scope);
+
+    @SelectProvider(type = ChannelProvider.class, method = "queryRecordPlanChannelIds")
+    List<Integer> queryRecordPlanChannelIds(
+            @Param("planId") Integer planId,
+            @Param("hasLink") Boolean hasLink,
+            @Param("scope") VideoScopeQuery scope);
+
+    @Select("select id from wvp_device_channel where record_plan_id = #{planId}")
+    List<Integer> getLinkedChannelIds(@Param("planId") Integer planId);
+
     @SelectProvider(type = ChannelProvider.class, method = "queryByDataId")
     CommonGBChannel queryByDataId(@Param("dataType") Integer dataType, @Param("dataDeviceId") Integer dataDeviceId);
 
     @SelectProvider(type = ChannelProvider.class, method = "queryListByCivilCodeForUnusual")
-    List<CommonGBChannel> queryListByCivilCodeForUnusual(@Param("query") String query, @Param("online") Boolean online, @Param("dataType")Integer dataType);
+    List<CommonGBChannel> queryListByCivilCodeForUnusual(
+            @Param("query") String query,
+            @Param("online") Boolean online,
+            @Param("dataType") Integer dataType,
+            @Param("scope") VideoScopeQuery scope);
 
     @SelectProvider(type = ChannelProvider.class, method = "queryAllForUnusualCivilCode")
-    List<Integer> queryAllForUnusualCivilCode();
+    List<Integer> queryAllForUnusualCivilCode(
+            @Param("scope") VideoScopeQuery scope);
 
     @SelectProvider(type = ChannelProvider.class, method = "queryListByParentForUnusual")
-    List<CommonGBChannel> queryListByParentForUnusual(@Param("query") String query, @Param("online") Boolean online, @Param("dataType")Integer dataType);
+    List<CommonGBChannel> queryListByParentForUnusual(
+            @Param("query") String query,
+            @Param("online") Boolean online,
+            @Param("dataType") Integer dataType,
+            @Param("scope") VideoScopeQuery scope);
 
     @SelectProvider(type = ChannelProvider.class, method = "queryAllForUnusualParent")
-    List<Integer> queryAllForUnusualParent();
+    List<Integer> queryAllForUnusualParent(
+            @Param("scope") VideoScopeQuery scope);
 
     @Update(value = {" <script>" +
             " UPDATE wvp_device_channel " +
@@ -625,41 +658,69 @@ public interface CommonGBChannelMapper {
 
 
     @SelectProvider(type = ChannelProvider.class, method = "queryListForSy")
-    List<CameraChannel> queryListForSy(@Param("groupDeviceId") String groupDeviceId, @Param("online") Boolean online);
+    List<CameraChannel> queryListForSy(
+            @Param("groupDeviceId") String groupDeviceId,
+            @Param("online") Boolean online,
+            @Param("scope") VideoScopeQuery scope);
 
 
     @SelectProvider(type = ChannelProvider.class, method = "queryGbChannelByChannelDeviceIdAndGbDeviceId")
     List<CameraChannel> queryGbChannelByChannelDeviceIdAndGbDeviceId(@Param("channelDeviceId") String channelDeviceId, @Param("gbDeviceId") String gbDeviceId);
 
     @SelectProvider(type = ChannelProvider.class, method = "queryListByDeviceIds")
-    List<CameraChannel> queryListByDeviceIds(List<String> deviceIds);
+    List<CameraChannel> queryListByDeviceIds(
+            @Param("deviceIds") List<String> deviceIds,
+            @Param("scope") VideoScopeQuery scope);
 
     @SelectProvider(type = ChannelProvider.class, method = "queryListWithChildForSy")
-    List<CameraChannel> queryListWithChildForSy(@Param("query") String query, @Param("sortName") String sortName, @Param("order") Boolean order, @Param("groupList") List<CameraGroup> groupList, @Param("online") Boolean online);
+    List<CameraChannel> queryListWithChildForSy(
+            @Param("query") String query,
+            @Param("sortName") String sortName,
+            @Param("order") Boolean order,
+            @Param("groupList") List<CameraGroup> groupList,
+            @Param("online") Boolean online,
+            @Param("scope") VideoScopeQuery scope);
+
+    @SelectProvider(type = ChannelProvider.class, method = "queryCountWithChildForSy")
+    List<CameraCount> queryCountWithChildForSy(
+            @Param("groupList") List<CameraGroup> groupList,
+            @Param("scope") VideoScopeQuery scope);
 
     @SelectProvider(type = ChannelProvider.class, method = "queryListByAddressAndDirectionType")
-    List<CameraChannel> queryListByAddressAndDirectionType(@Param("address") String address, @Param("directionType") Integer directionType);
+    List<CameraChannel> queryListByAddressAndDirectionType(
+            @Param("address") String address,
+            @Param("directionType") Integer directionType,
+            @Param("scope") VideoScopeQuery scope);
 
     @SelectProvider(type = ChannelProvider.class, method = "queryListInBox")
     List<CameraChannel> queryListInBox(@Param("minLongitude") Double minLongitude, @Param("maxLongitude") Double maxLongitude,
                                        @Param("minLatitude") Double minLatitude, @Param("maxLatitude") Double maxLatitude,
-                                       @Param("level") Integer level, @Param("groupList") List<CameraGroup> groupList);
+                                       @Param("level") Integer level, @Param("groupList") List<CameraGroup> groupList,
+                                       @Param("scope") VideoScopeQuery scope);
 
     @SelectProvider(type = ChannelProvider.class, method = "queryListInCircleForMysql", databaseId = "mysql")
     @SelectProvider(type = ChannelProvider.class, method = "queryListInCircleForMysql", databaseId = "h2")
     @SelectProvider(type = ChannelProvider.class, method = "queryListInCircleForKingBase", databaseId = "kingbase")
     @SelectProvider(type = ChannelProvider.class, method = "queryListInCircleForKingBase", databaseId = "postgresql")
     List<CameraChannel> queryListInCircle(@Param("centerLongitude") Double centerLongitude, @Param("centerLatitude") Double centerLatitude,
-                                          @Param("radius") Double radius, @Param("level") Integer level, @Param("groupList") List<CameraGroup> groupList);
+                                          @Param("radius") Double radius, @Param("level") Integer level,
+                                          @Param("groupList") List<CameraGroup> groupList,
+                                          @Param("scope") VideoScopeQuery scope);
 
     @SelectProvider(type = ChannelProvider.class, method = "queryListInPolygonForMysql", databaseId = "mysql")
     @SelectProvider(type = ChannelProvider.class, method = "queryListInPolygonForMysql", databaseId = "h2")
     @SelectProvider(type = ChannelProvider.class, method = "queryListInPolygonForKingBase", databaseId = "kingbase")
     @SelectProvider(type = ChannelProvider.class, method = "queryListInPolygonForKingBase", databaseId = "postgresql")
-    List<CameraChannel> queryListInPolygon(@Param("pointList") List<Point> pointList, @Param("level") Integer level, @Param("groupList") List<CameraGroup> groupList);
+    List<CameraChannel> queryListInPolygon(
+            @Param("pointList") List<Point> pointList,
+            @Param("level") Integer level,
+            @Param("groupList") List<CameraGroup> groupList,
+            @Param("scope") VideoScopeQuery scope);
 
     @SelectProvider(type = ChannelProvider.class, method = "queryListForSyMobile")
-    List<CameraChannel> queryListForSyMobile(@Param("business") String business);
+    List<CameraChannel> queryListForSyMobile(
+            @Param("business") String business,
+            @Param("scope") VideoScopeQuery scope);
 
     @SelectProvider(type = ChannelProvider.class, method = "queryCameraChannelById")
     CameraChannel queryCameraChannelById(@Param("gbId") Integer id);
@@ -679,14 +740,17 @@ public interface CommonGBChannelMapper {
     List<CommonGBChannel> queryOldChanelListByChannels(List<CommonGBChannel> channelList);
 
     @SelectProvider(type = ChannelProvider.class, method = "queryMeetingChannelList")
-    List<CameraChannel> queryMeetingChannelList(@Param("business") String business);
+    List<CameraChannel> queryMeetingChannelList(
+            @Param("business") String business,
+            @Param("scope") VideoScopeQuery scope);
 
     @Update("UPDATE wvp_device_channel SET map_level=null")
     int resetLevel();
 
     @SelectProvider(type = ChannelProvider.class, method = "queryCameraChannelInBox")
     List<CommonGBChannel> queryCameraChannelInBox(@Param("minLon") double minLon, @Param("maxLon") double maxLon,
-                                                  @Param("minLat") double minLat, @Param("maxLat") double maxLat);
+                                                  @Param("minLat") double minLat, @Param("maxLat") double maxLat,
+                                                  @Param("scope") VideoScopeQuery scope);
 
     @Select("select " +
             "MAX(coalesce(gb_longitude, longitude)) as maxLng,  " +
@@ -698,11 +762,18 @@ public interface CommonGBChannelMapper {
     Extent queryExtent();
 
     @SelectProvider(type = ChannelProvider.class, method = "queryAllWithPosition")
-    List<CommonGBChannel> queryAllWithPosition();
+    List<CommonGBChannel> queryAllWithPosition(
+            @Param("scope") VideoScopeQuery scope);
+
+    @SelectProvider(
+            type = ChannelProvider.class,
+            method = "queryAllWithPositionForInternalMaintenance")
+    List<CommonGBChannel> queryAllWithPositionForInternalMaintenance();
 
     @SelectProvider(type = ChannelProvider.class, method = "queryListInExtent")
     List<CommonGBChannel> queryListInExtent(@Param("minLng") double minLng, @Param("maxLng") double maxLng,
-                                            @Param("minLat") double minLat, @Param("maxLat") double maxLat);
+                                            @Param("minLat") double minLat, @Param("maxLat") double maxLat,
+                                            @Param("scope") VideoScopeQuery scope);
 
     @SelectProvider(type = ChannelProvider.class, method = "queryListOutExtent")
     List<CommonGBChannel> queryListOutExtent(@Param("minLng") double minLng, @Param("maxLng") double maxLng,

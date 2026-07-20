@@ -18,6 +18,8 @@ import moment from 'moment/moment'
 import logViewer from '@femessage/log-viewer'
 import stripAnsi from 'strip-ansi'
 import request from '@/utils/request'
+import { issueLogWebSocketTicket } from '@/api/log'
+import { normalizeLogWebSocketTicket } from '@/utils/logWebSocket'
 
 export default {
   name: 'Log',
@@ -31,25 +33,20 @@ export default {
       filter: '',
       logData: '',
       websocket: null,
-      destroyedCallback: null
+      connectionSequence: 0
     }
   },
   watch: {
-    remoteUrl(newValue) {
-      console.log(newValue)
-      this.remoteUrl = newValue
+    remoteUrl() {
       this.initData()
     },
-    fileUrl(newValue) {
-      this.fileUrl = newValue
+    fileUrl() {
       this.initData()
     },
-    filter(newValue) {
-      this.filter = newValue
+    filter() {
       this.logData = this.getLogData()
     },
-    data(newValue) {
-      this.data = newValue
+    data() {
       this.logData = this.getLogData()
     }
   },
@@ -60,16 +57,15 @@ export default {
     }
   },
   destroyed() {
-    console.log('destroyed')
-    if (this.destroyedCallback) {
-      this.destroyedCallback()
-    }
+    this.connectionSequence++
+    this.closeWebSocket()
   },
   methods: {
     initData: function() {
+      this.connectionSequence++
+      this.closeWebSocket()
       this.loading = true
       this.data = []
-      console.log(this.loading)
       if (this.fileUrl) {
         request({
           method: 'get',
@@ -87,26 +83,44 @@ export default {
           console.log(error)
         })
       } else if (this.remoteUrl) {
-        console.log('remoteUrl' + this.remoteUrl)
-        console.log(window.location.host)
-        window.websocket = new WebSocket(this.remoteUrl, this.$store.getters.token)
-        window.websocket.onclose = e => {
+        this.connectRemoteLog(this.connectionSequence)
+      }
+    },
+    async connectRemoteLog(sequence) {
+      try {
+        const ticket = normalizeLogWebSocketTicket(
+          await issueLogWebSocketTicket())
+        if (sequence !== this.connectionSequence) return
+        const websocket = new WebSocket(this.remoteUrl, ticket.protocols)
+        this.websocket = websocket
+        websocket.onclose = e => {
+          if (this.websocket === websocket) this.websocket = null
           console.log(`conn closed: code=${e.code}, reason=${e.reason}, wasClean=${e.wasClean}`)
         }
-        window.websocket.onmessage = e => {
-          this.loading = false
+        websocket.onmessage = e => {
+          if (sequence !== this.connectionSequence) return
           this.data.push(e.data)
         }
-        window.websocket.onerror = e => {
-          console.log(`conn err`)
+        websocket.onerror = e => {
+          if (sequence === this.connectionSequence) this.loading = false
+          console.log('conn err')
           console.error(e)
         }
-        window.websocket.onopen = e => {
-          console.log(`conn open: ${e}`)
-          this.destroyedCallback = () => {
-            window.websocket.close()
-          }
+        websocket.onopen = () => {
+          if (sequence === this.connectionSequence) this.loading = false
         }
+      } catch (error) {
+        if (sequence === this.connectionSequence) {
+          this.loading = false
+          console.error('实时日志连接失败', error)
+        }
+      }
+    },
+    closeWebSocket() {
+      if (this.websocket) {
+        const websocket = this.websocket
+        this.websocket = null
+        websocket.close()
       }
     },
     getLogData: function() {

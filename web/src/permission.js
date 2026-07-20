@@ -1,52 +1,29 @@
 import router from './router'
 import store from './store'
-import NProgress from 'nprogress' // progress bar
-import 'nprogress/nprogress.css' // progress bar style
-import { getToken, getName, getServerId } from '@/utils/auth' // get token from cookie
+import NProgress from 'nprogress'
+import 'nprogress/nprogress.css'
+import { getToken } from '@/utils/auth'
 import getPageTitle from '@/utils/get-page-title'
+import {
+  createPermissionGuard,
+  createRouteLoader
+} from '@/utils/permission-guard'
 
-NProgress.configure({ showSpinner: false }) // NProgress Configuration
+NProgress.configure({ showSpinner: false })
 
-const whiteList = ['/login', '/play/share'] // no redirect whitelist
+const routeLoader = createRouteLoader(store, router)
+const permissionGuard = createPermissionGuard({
+  store,
+  tokenProvider: getToken,
+  routeLoader
+})
 
-router.beforeEach(async(to, from, next) => {
-  // start progress bar
+router.beforeEach((to, from, next) => {
   NProgress.start()
-
-  // set page title
   document.title = getPageTitle(to.meta.title)
-
-  // determine whether the user has logged in
-  const hasToken = getToken()
-
-  if (hasToken) {
-    if (to.path === '/login') {
-      // if is logged in, redirect to the home page
-      next({ path: '/' })
-      NProgress.done()
-    } else {
-      const hasGetUserInfo = store.getters.name
-      if (!hasGetUserInfo) {
-        store.commit('user/SET_NAME', getName())
-        store.commit('user/SET_SERVER_ID', getServerId())
-      }
-      next()
-    }
-  } else {
-    /* has no token*/
-
-    if (whiteList.indexOf(to.path) !== -1) {
-      // in the free login whitelist, go directly
-      next()
-    } else {
-      // other pages that do not have permission to access are redirected to the login page.
-      next(`/login?redirect=${to.path}`)
-      NProgress.done()
-    }
-  }
+  return permissionGuard(to, from, next)
 })
 
 router.afterEach(() => {
-  // finish progress bar
   NProgress.done()
 })

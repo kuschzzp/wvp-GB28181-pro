@@ -1,6 +1,12 @@
 package com.genersoft.iot.vmp.vmanager.alarm;
 
+import com.genersoft.iot.vmp.authorization.AuthorizationFacade;
+import com.genersoft.iot.vmp.authorization.video.DerivedResourceAccessAuthorizer;
 import com.genersoft.iot.vmp.conf.security.JwtUtils;
+import com.genersoft.iot.vmp.media.security.DownloadResourceType;
+import com.genersoft.iot.vmp.media.security.DownloadTicketService;
+import com.genersoft.iot.vmp.media.security.dto.DownloadTicketRequest;
+import com.genersoft.iot.vmp.media.security.dto.DownloadTicketResponse;
 import com.genersoft.iot.vmp.service.IAlarmService;
 import com.genersoft.iot.vmp.service.bean.AlarmType;
 import com.genersoft.iot.vmp.service.bean.Alarm;
@@ -9,17 +15,11 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.io.IOUtils;
-import org.springframework.http.MediaType;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
 import java.util.List;
 
 @Tag(name = "报警管理接口")
@@ -27,9 +27,20 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/alarm")
 @RequiredArgsConstructor
+@PreAuthorize("@authz.check('video:alarm:list')")
 public class AlarmController {
 
+    private static final String ALARM_LIST_PERMISSION = "video:alarm:list";
+    private static final String ALARM_REMOVE_PERMISSION = "video:alarm:remove";
+    private static final String ALARM_CLEAR_PERMISSION = "video:alarm:clear";
+
     private final IAlarmService alarmService;
+
+    private final AuthorizationFacade authorizationFacade;
+
+    private final DerivedResourceAccessAuthorizer derivedResourceAccessAuthorizer;
+
+    private final DownloadTicketService downloadTicketService;
 
     @ResponseBody
     @GetMapping("/list")
@@ -44,18 +55,28 @@ public class AlarmController {
                                 @RequestParam(required = false) List<AlarmType> alarmType,
                                 @RequestParam(required = false) String beginTime,
                                 @RequestParam(required = false) String endTime) {
-        return alarmService.getAlarms(page, count, alarmType, beginTime, endTime);
+        return alarmService.getAlarms(
+                page,
+                count,
+                alarmType,
+                beginTime,
+                endTime,
+                authorizationFacade.resolveVideoScopeQuery(ALARM_LIST_PERMISSION));
     }
 
     @ResponseBody
+    @PreAuthorize("@authz.check('video:alarm:remove')")
     @DeleteMapping("/delete")
     @Operation(summary = "删除报警信息", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "ids", description = "报警ID列表", required = true)
     public void delete(@RequestBody List<Long> ids) {
+        derivedResourceAccessAuthorizer.requireAllAlarms(
+                ALARM_REMOVE_PERMISSION, ids);
         alarmService.deleteAlarmInfo(ids);
     }
 
     @ResponseBody
+    @PreAuthorize("@authz.check('video:alarm:clear')")
     @DeleteMapping("/clear")
     @Operation(summary = "按筛选条件清空报警信息", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "alarmType", description = "报警类型列表，为空则不限类型")
@@ -64,30 +85,21 @@ public class AlarmController {
     public int clear(@RequestParam(required = false) List<AlarmType> alarmType,
                      @RequestParam(required = false) String beginTime,
                      @RequestParam(required = false) String endTime) {
-        return alarmService.clearAlarmsByCondition(alarmType, beginTime, endTime);
+        return alarmService.clearAlarmsByCondition(
+                alarmType,
+                beginTime,
+                endTime,
+                authorizationFacade.resolveVideoScopeQuery(
+                        ALARM_CLEAR_PERMISSION));
     }
 
     @GetMapping("/snap/{id}")
     @Operation(summary = "获取报警快照图片")
     @Parameter(name = "id", description = "报警ID", required = true)
-    public void snap(HttpServletResponse resp, @PathVariable Long id) {
-        String snapPath = alarmService.getAlarmSnapById(id);
-        if (snapPath == null || snapPath.isEmpty()) {
-            resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
-            return;
-        }
-        try {
-            File file = new File(snapPath);
-            if (!file.exists()) {
-                resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
-                return;
-            }
-            try (InputStream in = Files.newInputStream(file.toPath())) {
-                resp.setContentType(MediaType.IMAGE_JPEG_VALUE);
-                IOUtils.copy(in, resp.getOutputStream());
-            }
-        } catch (IOException e) {
-            resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
-        }
+    public DownloadTicketResponse snap(@PathVariable Long id) {
+        derivedResourceAccessAuthorizer.requireAlarm(
+                ALARM_LIST_PERMISSION, id);
+        return downloadTicketService.issue(DownloadTicketRequest.single(
+                DownloadResourceType.ALARM_SNAPSHOT, id));
     }
 }

@@ -3,6 +3,10 @@ package com.genersoft.iot.vmp.jt1078.service.impl;
 import com.genersoft.iot.vmp.common.CommonCallback;
 import com.genersoft.iot.vmp.common.StreamInfo;
 import com.genersoft.iot.vmp.common.VideoManagerConstants;
+import com.genersoft.iot.vmp.authorization.video.VideoResourceLifecycleService;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceRef;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceType;
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.conf.DynamicTask;
 import com.genersoft.iot.vmp.conf.UserSetting;
 import com.genersoft.iot.vmp.conf.exception.ControllerException;
@@ -49,7 +53,9 @@ import java.io.OutputStream;
 import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -70,6 +76,9 @@ public class jt1078ServiceImpl implements Ijt1078Service {
 
     @Autowired
     private IGbChannelService channelService;
+
+    @Autowired
+    private VideoResourceLifecycleService resourceLifecycleService;
 
     @Autowired
     private DynamicTask dynamicTask;
@@ -93,7 +102,8 @@ public class jt1078ServiceImpl implements Ijt1078Service {
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady(){
         // 检查session与在线终端是是否对应 不对应则设置终端离线
-        List<JTDevice> deviceList = jtDeviceMapper.getDeviceList(null, true);
+        List<JTDevice> deviceList =
+                jtDeviceMapper.getDeviceListForInternalMaintenance(null, true);
         if (deviceList.isEmpty()) {
             return;
         }
@@ -102,7 +112,8 @@ public class jt1078ServiceImpl implements Ijt1078Service {
             if (session == null) {
                 device.setStatus(false);
                 // 通道发送状态变化通知
-                List<JTChannel> jtChannels = jtChannelMapper.selectAll(device.getId(), null);
+                List<JTChannel> jtChannels =
+                        jtChannelMapper.selectAllForInternalMaintenance(device.getId(), null);
                 List<CommonGBChannel> channelList = new ArrayList<>();
                 for (JTChannel jtChannel : jtChannels) {
                     if (jtChannel.getGbId() > 0) {
@@ -147,7 +158,8 @@ public class jt1078ServiceImpl implements Ijt1078Service {
         JTDevice deviceInDb = getDevice(event.getDevice().getPhoneNumber());
         if (deviceInDb.isStatus() != device.isStatus()) {
             // 通道发送状态变化通知
-            List<JTChannel> jtChannels = jtChannelMapper.selectAll(deviceInDb.getId(), null);
+            List<JTChannel> jtChannels =
+                    jtChannelMapper.selectAllForInternalMaintenance(deviceInDb.getId(), null);
             List<CommonGBChannel> channelList = new ArrayList<>();
             for (JTChannel jtChannel : jtChannels) {
                 if (jtChannel.getGbId() > 0) {
@@ -179,7 +191,8 @@ public class jt1078ServiceImpl implements Ijt1078Service {
         updateDevice(device);
 
         // 通道发送状态变化通知
-        List<JTChannel> jtChannels = jtChannelMapper.selectAll(device.getId(), null);
+        List<JTChannel> jtChannels =
+                jtChannelMapper.selectAllForInternalMaintenance(device.getId(), null);
         List<CommonGBChannel> channelList = new ArrayList<>();
         for (JTChannel jtChannel : jtChannels) {
             if (jtChannel.getGbId() > 0) {
@@ -236,19 +249,26 @@ public class jt1078ServiceImpl implements Ijt1078Service {
 
     @Override
     public void updateDevice(JTDevice device) {
+        Assert.notNull(device, "设备不可为NULL");
+        Assert.isTrue(device.getId() > 0, "设备内部ID必须存在");
         device.setUpdateTime(DateUtil.getNow());
         jtDeviceMapper.updateDevice(device);
     }
 
     @Override
-    public PageInfo<JTDevice> getDeviceList(int page, int count, String query, Boolean online) {
+    public PageInfo<JTDevice> getDeviceList(
+            int page,
+            int count,
+            String query,
+            Boolean online,
+            VideoScopeQuery scope) {
         PageHelper.startPage(page, count);
         if (query != null) {
             query = query.replaceAll("/", "//")
                     .replaceAll("%", "/%")
                     .replaceAll("_", "/_");
         }
-        List<JTDevice> all = jtDeviceMapper.getDeviceList(query, online);
+        List<JTDevice> all = jtDeviceMapper.getDeviceList(query, online, scope);
         return new PageInfo<>(all);
     }
 
@@ -264,8 +284,38 @@ public class jt1078ServiceImpl implements Ijt1078Service {
     }
 
     @Override
+    @Transactional
     public void deleteDeviceByPhoneNumber(String phoneNumber) {
-        jtDeviceMapper.deleteDeviceByPhoneNumber(phoneNumber);
+        JTDevice device = jtDeviceMapper.getDevice(phoneNumber);
+        if (device == null) {
+            return;
+        }
+        List<JTChannel> channels = jtChannelMapper
+                .selectAllForInternalMaintenance(device.getId(), null);
+        LinkedHashSet<VideoResourceRef> resources = new LinkedHashSet<>();
+        resources.add(new VideoResourceRef(
+                VideoResourceType.JT_TERMINAL, device.getId()));
+        LinkedHashSet<Integer> commonChannelIds = new LinkedHashSet<>();
+        if (channels != null) {
+            for (JTChannel channel : channels) {
+                if (channel == null || channel.getId() <= 0) {
+                    continue;
+                }
+                resources.add(new VideoResourceRef(
+                        VideoResourceType.JT_CHANNEL, channel.getId()));
+                if (channel.getGbId() > 0) {
+                    commonChannelIds.add(channel.getGbId());
+                    resources.add(new VideoResourceRef(
+                            VideoResourceType.CHANNEL, channel.getGbId()));
+                }
+            }
+        }
+        resourceLifecycleService.removeAll(resources);
+        if (!commonChannelIds.isEmpty()) {
+            channelService.delete(Set.copyOf(commonChannelIds));
+        }
+        jtChannelMapper.deleteByTerminalDbId(device.getId());
+        jtDeviceMapper.deleteDeviceById(device.getId());
     }
 
     @Override
@@ -708,14 +758,19 @@ public class jt1078ServiceImpl implements Ijt1078Service {
     }
 
     @Override
-    public PageInfo<JTChannel> getChannelList(int page, int count, int deviceId, String query) {
+    public PageInfo<JTChannel> getChannelList(
+            int page,
+            int count,
+            int deviceId,
+            String query,
+            VideoScopeQuery scope) {
 
         JTDevice device = getDeviceById(deviceId);
         if (device == null) {
             throw new ControllerException(ErrorCode.ERROR100.getCode(), "设备不存在");
         }
         PageHelper.startPage(page, count);
-        List<JTChannel> all = jtChannelMapper.selectAll(deviceId, query);
+        List<JTChannel> all = jtChannelMapper.selectAll(deviceId, query, scope);
         PageInfo<JTChannel> jtChannelPageInfo = new PageInfo<>(all);
         for (JTChannel jtChannel : jtChannelPageInfo.getList()) {
             String playKey = VideoManagerConstants.INVITE_INFO_1078_PLAY + device.getPhoneNumber() + ":" + jtChannel.getChannelId();
@@ -763,6 +818,14 @@ public class jt1078ServiceImpl implements Ijt1078Service {
         if (jtChannel == null) {
             return;
         }
+        LinkedHashSet<VideoResourceRef> resources = new LinkedHashSet<>();
+        resources.add(new VideoResourceRef(
+                VideoResourceType.JT_CHANNEL, jtChannel.getId()));
+        if (jtChannel.getGbId() > 0) {
+            resources.add(new VideoResourceRef(
+                    VideoResourceType.CHANNEL, jtChannel.getGbId()));
+        }
+        resourceLifecycleService.removeAll(resources);
         if (jtChannel.getGbId() > 0) {
             channelService.delete(jtChannel.getGbId());
         }
@@ -848,6 +911,11 @@ public class jt1078ServiceImpl implements Ijt1078Service {
         return filePath;
     }
 
+
+    @Override
+    public JTRecordDownloadCatch getRecordDownload(String downloadId) {
+        return downloadManager.getCatch(downloadId);
+    }
 
     @Override
     public void recordDownload(String filePath, ServletOutputStream outputStream) {

@@ -1,6 +1,7 @@
 package com.genersoft.iot.vmp.conf.redis;
 
 import com.alibaba.fastjson2.JSON;
+import com.genersoft.iot.vmp.auth.internal.InternalInvocationGuard;
 import com.genersoft.iot.vmp.common.CommonCallback;
 import com.genersoft.iot.vmp.conf.UserSetting;
 import com.genersoft.iot.vmp.conf.redis.bean.RedisRpcClassHandler;
@@ -44,6 +45,9 @@ public class RedisRpcConfig implements MessageListener {
 
     @Autowired
     private TaskExecutor taskExecutor;
+
+    @Autowired
+    private InternalInvocationGuard internalInvocationGuard;
 
     private final static Map<String, RedisRpcClassHandler> protocolHash = new HashMap<>();
 
@@ -114,6 +118,13 @@ public class RedisRpcConfig implements MessageListener {
 
     private void handlerRequest(RedisRpcRequest request) {
         try {
+            if (request.getFromId() == null
+                    || request.getFromId().isBlank()
+                    || request.getUri() == null
+                    || request.getUri().isBlank()) {
+                log.warn("[redis-rpc] 拒绝缺少来源节点或 URI 的请求");
+                return;
+            }
             if (userSetting.getServerId().equals(request.getFromId())) {
                 return;
             }
@@ -134,7 +145,8 @@ public class RedisRpcConfig implements MessageListener {
                     sendResponse(response);
                     return;
                 }
-                RedisRpcResponse response = (RedisRpcResponse)method.invoke(controller, request);
+                RedisRpcResponse response = invokeInternalHandler(
+                        controller, method, request);
                 if(response != null) {
                     sendResponse(response);
                 }
@@ -146,7 +158,8 @@ public class RedisRpcConfig implements MessageListener {
                     sendResponse(response);
                     return;
                 }
-                RedisRpcResponse response = (RedisRpcResponse)method.invoke(controller, request);
+                RedisRpcResponse response = invokeInternalHandler(
+                        controller, method, request);
                 if (response != null) {
                     sendResponse(response);
                 }
@@ -156,6 +169,18 @@ public class RedisRpcConfig implements MessageListener {
             RedisRpcResponse response = request.getResponse();
             response.setStatusCode(ErrorCode.ERROR100.getCode());
             sendResponse(response);
+        }
+    }
+
+    private RedisRpcResponse invokeInternalHandler(
+            RpcController controller,
+            Method method,
+            RedisRpcRequest request) throws ReflectiveOperationException {
+        String sourceId = request.getFromId().trim()
+                + ":" + request.getUri().trim();
+        try (InternalInvocationGuard.Scope ignored =
+                     internalInvocationGuard.enterRedisRpc(sourceId)) {
+            return (RedisRpcResponse) method.invoke(controller, request);
         }
     }
 

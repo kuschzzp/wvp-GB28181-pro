@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.service.impl;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.common.StreamInfo;
 import com.genersoft.iot.vmp.conf.SipConfig;
 import com.genersoft.iot.vmp.conf.UserSetting;
@@ -102,7 +103,7 @@ public class AlarmServiceImpl implements IAlarmService {
         }
         String endTime = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
                 .format(new Date(System.currentTimeMillis() - (long) keepDays * 24 * 3600 * 1000));
-        int count = clearAlarmsByCondition(null, null, endTime);
+        int count = clearAlarmsForInternalMaintenance(null, null, endTime);
         log.info("自动清理过期报警记录完成，保留天数：{}，清理数量：{}", keepDays, count);
     }
 
@@ -162,7 +163,13 @@ public class AlarmServiceImpl implements IAlarmService {
     }
 
     @Override
-    public PageInfo<Alarm> getAlarms(int page, int count, List<AlarmType> alarmType, String beginTime, String endTime) {
+    public PageInfo<Alarm> getAlarms(
+            int page,
+            int count,
+            List<AlarmType> alarmType,
+            String beginTime,
+            String endTime,
+            VideoScopeQuery scope) {
         PageHelper.startPage(page, count);
         Long beginTimeLong = null;
         Long endTimeLong = null;
@@ -172,7 +179,8 @@ public class AlarmServiceImpl implements IAlarmService {
         if (endTime != null) {
             endTimeLong = DateUtil.yyyy_MM_dd_HH_mm_ssToTimestampMs(endTime);
         }
-        List<Alarm> alarmList = alarmMapper.getAlarms(alarmType, beginTimeLong, endTimeLong);
+        List<Alarm> alarmList =
+                alarmMapper.getAlarms(alarmType, beginTimeLong, endTimeLong, scope);
         return new PageInfo<>(alarmList);
     }
 
@@ -184,7 +192,29 @@ public class AlarmServiceImpl implements IAlarmService {
     }
 
     @Override
-    public int clearAlarmsByCondition(List<AlarmType> alarmType, String beginTime, String endTime) {
+    public int clearAlarmsByCondition(
+            List<AlarmType> alarmType,
+            String beginTime,
+            String endTime,
+            VideoScopeQuery scope) {
+        return clearAlarms(
+                alarmType, beginTime, endTime, scope, true);
+    }
+
+    private int clearAlarmsForInternalMaintenance(
+            List<AlarmType> alarmType,
+            String beginTime,
+            String endTime) {
+        return clearAlarms(
+                alarmType, beginTime, endTime, null, false);
+    }
+
+    private int clearAlarms(
+            List<AlarmType> alarmType,
+            String beginTime,
+            String endTime,
+            VideoScopeQuery scope,
+            boolean scoped) {
         Long beginTimeLong = null;
         Long endTimeLong = null;
         if (beginTime != null) {
@@ -193,8 +223,16 @@ public class AlarmServiceImpl implements IAlarmService {
         if (endTime != null) {
             endTimeLong = DateUtil.yyyy_MM_dd_HH_mm_ssToTimestampMs(endTime);
         }
-        // 清理前缓存数据，数据库删除后，相关的报警快照文件也需要清理掉
-        alarmMapper.getAlarms(alarmType, beginTimeLong, endTimeLong).forEach(alarm -> {
+        List<Alarm> alarms = scoped
+                ? alarmMapper.getAlarms(
+                        alarmType, beginTimeLong, endTimeLong, scope)
+                : alarmMapper.getAlarmsForInternalMaintenance(
+                        alarmType, beginTimeLong, endTimeLong);
+        if (alarms.isEmpty()) {
+            return 0;
+        }
+        // 只清理由本次权限范围查询返回的快照和报警记录。
+        alarms.forEach(alarm -> {
             String snapPath = alarm.getSnapPath();
             if (snapPath != null) {
                 File file = new File(snapPath);
@@ -203,7 +241,8 @@ public class AlarmServiceImpl implements IAlarmService {
                 }
             }
         });
-        return alarmMapper.deleteAlarmsByCondition(alarmType, beginTimeLong, endTimeLong);
+        return alarmMapper.deleteAlarms(
+                alarms.stream().map(Alarm::getId).toList());
     }
 
     @Override

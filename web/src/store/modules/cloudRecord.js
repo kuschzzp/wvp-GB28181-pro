@@ -1,6 +1,7 @@
 import {
   addTask, deleteRecord,
   getPlayPath,
+  getZipDownloadTicket,
   loadRecord,
   queryList,
   queryListByData,
@@ -13,6 +14,16 @@ const actions = {
   getPlayPath({ commit }, id) {
     return new Promise((resolve, reject) => {
       getPlayPath(id).then(response => {
+        const { data } = response
+        resolve(data)
+      }).catch(error => {
+        reject(error)
+      })
+    })
+  },
+  getZipDownloadTicket({ commit }, ids) {
+    return new Promise((resolve, reject) => {
+      getZipDownloadTicket(ids).then(response => {
         const { data } = response
         resolve(data)
       }).catch(error => {
@@ -106,4 +117,3 @@ export default {
   namespaced: true,
   actions
 }
-

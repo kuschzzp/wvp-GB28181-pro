@@ -1,6 +1,8 @@
 package com.genersoft.iot.vmp.service.impl;
 
 import com.genersoft.iot.vmp.common.enums.MediaStreamUtil;
+import com.genersoft.iot.vmp.auth.config.AuthorizationProperties;
+import com.genersoft.iot.vmp.auth.model.AuthorizationMode;
 import com.genersoft.iot.vmp.conf.UserSetting;
 import com.genersoft.iot.vmp.conf.exception.ControllerException;
 import com.genersoft.iot.vmp.gb28181.service.ISourceOtherService;
@@ -41,9 +43,18 @@ public class MediaServiceImpl implements IMediaService {
 
     private final Map<String, ISourceOtherService> sourceOtherServiceMap;
 
+    private final AuthorizationProperties authorizationProperties;
+
 
     @Override
-    public boolean authenticatePlay(String app, String stream, String callId) {
+    @Deprecated(forRemoval = true)
+    public boolean authenticateLegacyPlayInAudit(
+            String app,
+            String stream,
+            String callId) {
+        if (authorizationProperties.mode() != AuthorizationMode.AUDIT) {
+            return false;
+        }
         if (app == null || stream == null) {
             return false;
         }

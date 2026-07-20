@@ -1,5 +1,10 @@
 package com.genersoft.iot.vmp.web.custom;
 
+import com.genersoft.iot.vmp.authorization.AuthorizationFacade;
+import com.genersoft.iot.vmp.authorization.video.DerivedResourceAccessAuthorizer;
+import com.genersoft.iot.vmp.authorization.video.GbChannelAccessAuthorizer;
+import com.genersoft.iot.vmp.authorization.video.StreamResourceAccessAuthorizer;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceRef;
 import com.genersoft.iot.vmp.common.StreamInfo;
 import com.genersoft.iot.vmp.conf.DynamicTask;
 import com.genersoft.iot.vmp.conf.UserSetting;
@@ -7,22 +12,24 @@ import com.genersoft.iot.vmp.conf.exception.ControllerException;
 import com.genersoft.iot.vmp.conf.security.JwtUtils;
 import com.genersoft.iot.vmp.gb28181.bean.CommonGBChannel;
 import com.genersoft.iot.vmp.media.bean.MediaServer;
+import com.genersoft.iot.vmp.media.security.PlayableStreamService;
+import com.genersoft.iot.vmp.media.security.DownloadResourceType;
+import com.genersoft.iot.vmp.media.security.DownloadTicketService;
+import com.genersoft.iot.vmp.media.security.dto.DownloadTicketRequest;
+import com.genersoft.iot.vmp.media.security.dto.DownloadTicketResponse;
+import com.genersoft.iot.vmp.media.security.dto.PlayableStreamRef;
 import com.genersoft.iot.vmp.media.service.IMediaServerService;
 import com.genersoft.iot.vmp.media.zlm.dto.StreamAuthorityInfo;
 import com.genersoft.iot.vmp.service.ICloudRecordService;
-import com.genersoft.iot.vmp.service.bean.CloudRecordItem;
 import com.genersoft.iot.vmp.service.bean.ErrorCallback;
 import com.genersoft.iot.vmp.service.bean.InviteErrorCode;
 import com.genersoft.iot.vmp.storager.IRedisCatchStorage;
 import com.genersoft.iot.vmp.streamPush.bean.StreamPush;
 import com.genersoft.iot.vmp.streamPush.service.IStreamPushPlayService;
 import com.genersoft.iot.vmp.streamPush.service.IStreamPushService;
-import com.genersoft.iot.vmp.utils.DateUtil;
-import com.genersoft.iot.vmp.utils.HttpUtils;
 import com.genersoft.iot.vmp.vmanager.bean.ErrorCode;
 import com.genersoft.iot.vmp.vmanager.bean.StreamContent;
 import com.genersoft.iot.vmp.vmanager.bean.WVPResult;
-import com.genersoft.iot.vmp.vmanager.cloudRecord.bean.CloudRecordUrl;
 import com.genersoft.iot.vmp.web.custom.bean.*;
 import com.genersoft.iot.vmp.web.custom.service.CameraChannelService;
 import com.github.pagehelper.PageInfo;
@@ -32,24 +39,20 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.request.async.DeferredResult;
 
-import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
 
 @Tag(name  = "第三方接口")
 @Slf4j
@@ -57,7 +60,20 @@ import java.util.zip.ZipOutputStream;
 @RequestMapping(value = "/api/sy")
 @ConditionalOnProperty(value = "sy.enable", havingValue = "true")
 @Hidden
+@PreAuthorize("@authz.check('video:channel:list')")
 public class CameraChannelController {
+
+    private static final String CHANNEL_LIST_PERMISSION = "video:channel:list";
+    private static final String CHANNEL_PLAY_PERMISSION = "video:channel:play";
+    private static final String CHANNEL_STOP_PERMISSION = "video:channel:stop";
+    private static final String CHANNEL_EDIT_PERMISSION = "video:channel:edit";
+    private static final String PTZ_CONTROL_PERMISSION = "video:ptz:control";
+    private static final String PUSH_PLAY_PERMISSION = "video:push:play";
+    private static final String PUSH_STOP_PERMISSION = "video:push:stop";
+    private static final String CLOUD_RECORD_DOWNLOAD_PERMISSION =
+            "video:cloud-record:download";
+    private static final String CLOUD_RECORD_COLLECT_PERMISSION =
+            "video:cloud-record:collect";
 
     @Autowired
     private CameraChannelService channelService;
@@ -75,6 +91,18 @@ public class CameraChannelController {
     private ICloudRecordService cloudRecordService;
 
     @Autowired
+    private AuthorizationFacade authorizationFacade;
+
+    @Autowired
+    private DerivedResourceAccessAuthorizer derivedResourceAccessAuthorizer;
+
+    @Autowired
+    private GbChannelAccessAuthorizer channelAccessAuthorizer;
+
+    @Autowired
+    private StreamResourceAccessAuthorizer streamResourceAccessAuthorizer;
+
+    @Autowired
     private IStreamPushPlayService streamPushPlayService;
 
     @Autowired
@@ -82,6 +110,12 @@ public class CameraChannelController {
 
     @Autowired
     private IStreamPushService streamPushService;
+
+    @Autowired
+    private PlayableStreamService playableStreamService;
+
+    @Autowired
+    private DownloadTicketService downloadTicketService;
 
     @Value("${sy.ptz-control-time-interval}")
     private int ptzControlTimeInterval = 300;
@@ -101,7 +135,14 @@ public class CameraChannelController {
                                         @RequestParam(required = false) Boolean status){
 
 
-        return channelService.queryList(page, count, groupAlias, status, geoCoordSys);
+        return channelService.queryList(
+                page,
+                count,
+                groupAlias,
+                status,
+                geoCoordSys,
+                authorizationFacade.resolveVideoScopeQuery(
+                        CHANNEL_LIST_PERMISSION));
     }
 
     @GetMapping(value = "/camera/list-with-child")
@@ -137,7 +178,17 @@ public class CameraChannelController {
             groupAlias = null;
         }
 
-        return channelService.queryListWithChild(page, count, query, sortName, order, groupAlias, status, geoCoordSys);
+        return channelService.queryListWithChild(
+                page,
+                count,
+                query,
+                sortName,
+                order,
+                groupAlias,
+                status,
+                geoCoordSys,
+                authorizationFacade.resolveVideoScopeQuery(
+                        CHANNEL_LIST_PERMISSION));
     }
 
     @GetMapping(value = "/camera/cont-with-child")
@@ -145,7 +196,10 @@ public class CameraChannelController {
     @Operation(summary = "查询摄像机列表的总数和在线数", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "groupAlias", description = "分组别名")
     public List<CameraCount> queryCountWithChild(String groupAlias){
-        return channelService.queryCountWithChild(groupAlias);
+        return channelService.queryCountWithChild(
+                groupAlias,
+                authorizationFacade.resolveVideoScopeQuery(
+                        CHANNEL_LIST_PERMISSION));
     }
 
     @GetMapping(value = "/camera/one")
@@ -156,9 +210,12 @@ public class CameraChannelController {
     @Parameter(name = "geoCoordSys", description = "坐标系类型：WGS84,GCJ02、BD09")
     public CameraChannel getOne(String deviceId, @RequestParam(required = false) String deviceCode,
                                   @RequestParam(required = false) String geoCoordSys) {
+        channelAccessAuthorizer.requireUnifiedChannelHidden(
+                CHANNEL_LIST_PERMISSION, deviceId, deviceCode);
         return channelService.queryOne(deviceId, deviceCode, geoCoordSys);
     }
 
+    @PreAuthorize("@authz.check('video:channel:edit')")
     @GetMapping(value = "/camera/update")
     @ResponseBody
     @Operation(summary = "更新摄像头信息", security = @SecurityRequirement(name = JwtUtils.HEADER))
@@ -174,6 +231,8 @@ public class CameraChannelController {
                                       @RequestParam(required = false) Double longitude,
                                       @RequestParam(required = false) Double latitude,
                                       @RequestParam(required = false) String geoCoordSys) {
+        channelAccessAuthorizer.requireUnifiedChannel(
+                CHANNEL_EDIT_PERMISSION, deviceId, deviceCode);
         channelService.updateCamera(deviceId, deviceCode, name, longitude, latitude, geoCoordSys);
     }
 
@@ -181,7 +240,11 @@ public class CameraChannelController {
     @ResponseBody
     @Operation(summary = "根据编号查询多个摄像头信息", security = @SecurityRequirement(name = JwtUtils.HEADER))
     public List<CameraChannel> queryListByDeviceIds(@RequestBody IdsQueryParam param) {
-        return channelService.queryListByDeviceIds(param.getDeviceIds(), param.getGeoCoordSys());
+        return channelService.queryListByDeviceIds(
+                param.getDeviceIds(),
+                param.getGeoCoordSys(),
+                authorizationFacade.resolveVideoScopeQuery(
+                        CHANNEL_LIST_PERMISSION));
     }
 
     @GetMapping(value = "/camera/list/box")
@@ -199,14 +262,29 @@ public class CameraChannelController {
                                               @RequestParam(required = false) Integer level,
                                               String groupAlias,
                                               @RequestParam(required = false) String geoCoordSys) {
-        return channelService.queryListInBox(minLongitude, maxLongitude, minLatitude, maxLatitude, level, groupAlias, geoCoordSys);
+        return channelService.queryListInBox(
+                minLongitude,
+                maxLongitude,
+                minLatitude,
+                maxLatitude,
+                level,
+                groupAlias,
+                geoCoordSys,
+                authorizationFacade.resolveVideoScopeQuery(
+                        CHANNEL_LIST_PERMISSION));
     }
 
     @PostMapping(value = "/camera/list/polygon")
     @ResponseBody
     @Operation(summary = "根据多边形查询摄像头", security = @SecurityRequirement(name = JwtUtils.HEADER))
     public List<CameraChannel> queryListInPolygon(@RequestBody PolygonQueryParam param) {
-        return channelService.queryListInPolygon(param.getPosition(), param.getGroupAlias(), param.getLevel(), param.getGeoCoordSys());
+        return channelService.queryListInPolygon(
+                param.getPosition(),
+                param.getGroupAlias(),
+                param.getLevel(),
+                param.getGeoCoordSys(),
+                authorizationFacade.resolveVideoScopeQuery(
+                        CHANNEL_LIST_PERMISSION));
     }
 
     @GetMapping(value = "/camera/list/circle")
@@ -220,7 +298,15 @@ public class CameraChannelController {
     @Parameter(name = "geoCoordSys", description = "坐标系类型：WGS84,GCJ02、BD09")
     public List<CameraChannel> queryListInCircle(Double centerLongitude, Double centerLatitude, Double radius, String groupAlias,
                                                  @RequestParam(required = false) String geoCoordSys, @RequestParam(required = false) Integer level) {
-        return channelService.queryListInCircle(centerLongitude, centerLatitude, radius, level, groupAlias, geoCoordSys);
+        return channelService.queryListInCircle(
+                centerLongitude,
+                centerLatitude,
+                radius,
+                level,
+                groupAlias,
+                geoCoordSys,
+                authorizationFacade.resolveVideoScopeQuery(
+                        CHANNEL_LIST_PERMISSION));
     }
 
     @GetMapping(value = "/camera/list/address")
@@ -230,9 +316,15 @@ public class CameraChannelController {
     @Parameter(name = "directionType", description = "监视方位", required = false)
     @Parameter(name = "geoCoordSys", description = "坐标系类型：WGS84,GCJ02、BD09")
     public List<CameraChannel> queryListByAddressAndDirectionType(String address, @RequestParam(required = false) Integer directionType, @RequestParam(required = false) String geoCoordSys) {
-        return channelService.queryListByAddressAndDirectionType(address, directionType, geoCoordSys);
+        return channelService.queryListByAddressAndDirectionType(
+                address,
+                directionType,
+                geoCoordSys,
+                authorizationFacade.resolveVideoScopeQuery(
+                        CHANNEL_LIST_PERMISSION));
     }
 
+    @PreAuthorize("@authz.check('video:channel:play')")
     @GetMapping(value = "/camera/control/play")
     @ResponseBody
     @Operation(summary = "播放摄像头", security = @SecurityRequirement(name = JwtUtils.HEADER))
@@ -240,6 +332,8 @@ public class CameraChannelController {
     @Parameter(name = "deviceCode", description = "摄像头设备国标编号, 对于非国标摄像头可以不设置此参数")
     public DeferredResult<WVPResult<CameraStreamContent>> play(HttpServletRequest request, String deviceId, @RequestParam(required = false) String deviceCode) {
 
+        VideoResourceRef resource = channelAccessAuthorizer.requireUnifiedChannel(
+                CHANNEL_PLAY_PERMISSION, deviceId, deviceCode);
         log.info("[SY-播放摄像头] API调用，deviceId：{} ，deviceCode：{} ",deviceId, deviceCode);
         DeferredResult<WVPResult<CameraStreamContent>> result = new DeferredResult<>(userSetting.getPlayTimeout().longValue());
 
@@ -264,7 +358,10 @@ public class CameraChannelController {
                             && !"null".equalsIgnoreCase(streamInfo.getMediaServer().getTranscodeSuffix())) {
                         streamInfo.setStream(streamInfo.getStream() + "_" + streamInfo.getMediaServer().getTranscodeSuffix());
                     }
-                    CameraStreamContent cameraStreamContent = new CameraStreamContent(streamInfo);
+                    StreamContent safeStream = playableStreamService.publish(
+                            streamInfo, resource);
+                    CameraStreamContent cameraStreamContent = new CameraStreamContent(
+                            streamInfo, safeStream.getPlayable());
                     cameraStreamContent.setName(channel.getGbName());
                     if (channel.getGbPtzType() != null) {
                         cameraStreamContent.setControlType(
@@ -287,12 +384,15 @@ public class CameraChannelController {
         return result;
     }
 
+    @PreAuthorize("@authz.check('video:channel:stop')")
     @GetMapping(value = "/camera/control/stop")
     @ResponseBody
     @Operation(summary = "停止播放摄像头", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "deviceId", description = "通道编号")
     @Parameter(name = "deviceCode", description = "摄像头设备国标编号, 对于非国标摄像头可以不设置此参数")
     public void stopPlay(String deviceId, @RequestParam(required = false) String deviceCode) {
+        channelAccessAuthorizer.requireUnifiedChannel(
+                CHANNEL_STOP_PERMISSION, deviceId, deviceCode);
         log.info("[SY-停止播放摄像头] API调用，deviceId：{} ，deviceCode：{} ",deviceId, deviceCode);
         channelService.stopPlay(deviceId, deviceCode);
     }
@@ -302,9 +402,12 @@ public class CameraChannelController {
     @Parameter(name = "deviceCode", description = "摄像头设备国标编号, 对于非国标摄像头可以不设置此参数")
     @Parameter(name = "command", description = "控制指令,允许值: left, right, up, down, upleft, upright, downleft, downright, zoomin, zoomout, stop", required = true)
     @Parameter(name = "speed", description = "速度(0-100)", required = true)
+    @PreAuthorize("@authz.check('video:ptz:control')")
     @GetMapping("/camera/control/ptz")
     public DeferredResult<WVPResult<String>> ptz(String deviceId, @RequestParam(required = false) String deviceCode, String command, Integer speed){
 
+        channelAccessAuthorizer.requireUnifiedChannel(
+                PTZ_CONTROL_PERMISSION, deviceId, deviceCode);
         log.info("[SY-云台控制] API调用，deviceId：{} ，deviceCode：{} ，command：{} ，speed：{} ",deviceId, deviceCode, command, speed);
 
         DeferredResult<WVPResult<String>> result = new DeferredResult<>();
@@ -340,7 +443,12 @@ public class CameraChannelController {
                                                       @RequestParam(required = false, value = "count", defaultValue = "100")Integer count,
                                                       @RequestParam(required = false) String topGroupAlias){
 
-        return channelService.queryListForMobile(page, count, topGroupAlias);
+        return channelService.queryListForMobile(
+                page,
+                count,
+                topGroupAlias,
+                authorizationFacade.resolveVideoScopeQuery(
+                        CHANNEL_LIST_PERMISSION));
     }
 
 
@@ -348,12 +456,15 @@ public class CameraChannelController {
     @Parameter(name = "app", description = "应用名", required = true)
     @Parameter(name = "stream", description = "流id", required = true)
     @Parameter(name = "callId", description = "推流时携带的自定义鉴权ID", required = true)
+    @PreAuthorize("@authz.check('video:push:play')")
     @GetMapping(value = "/push/play")
     @ResponseBody
     public DeferredResult<WVPResult<StreamContent>> getStreamInfoByAppAndStream(HttpServletRequest request,
                                                                                 String app,
                                                                                 String stream,
                                                                                 String callId){
+        VideoResourceRef resource = streamResourceAccessAuthorizer.requirePush(
+                PUSH_PLAY_PERMISSION, app, stream);
         StreamPush streamPush = streamPushService.getPush(app, stream);
         Assert.notNull(streamPush, "地址不存在");
 
@@ -382,7 +493,8 @@ public class CameraChannelController {
                     host=request.getLocalAddr();
                 }
                 streamInfo.changeStreamIp(host);
-                WVPResult<StreamContent> success = WVPResult.success(new StreamContent(streamInfo));
+                WVPResult<StreamContent> success = WVPResult.success(
+                        playableStreamService.publish(streamInfo, resource));
                 result.setResult(success);
             }
         }, null, null);
@@ -393,6 +505,7 @@ public class CameraChannelController {
     @Parameter(name = "app", description = "应用名", required = true)
     @Parameter(name = "stream", description = "流id", required = true)
     @Parameter(name = "callId", description = "推流时携带的自定义鉴权ID", required = true)
+    @PreAuthorize("@authz.check('video:push:play')")
     @GetMapping(value = "/push/play-without-check")
     @ResponseBody
     public StreamContent getStreamInfoByAppAndStreamWithoutCheck(HttpServletRequest request,
@@ -400,6 +513,8 @@ public class CameraChannelController {
                                                                                 String stream,
                                                                                 String callId){
 
+        VideoResourceRef resource = streamResourceAccessAuthorizer.requirePush(
+                PUSH_PLAY_PERMISSION, app, stream);
         MediaServer mediaServer = mediaServerService.getDefaultMediaServer();
         Assert.notNull(mediaServer, "流媒体服务器不存在");
         StreamInfo streamInfo = mediaServerService.getStreamInfoByAppAndStream(mediaServer, app, stream, null, callId);
@@ -412,10 +527,11 @@ public class CameraChannelController {
             host=request.getLocalAddr();
         }
         streamInfo.changeStreamIp(host);
-        return new StreamContent(streamInfo);
+        return playableStreamService.publish(streamInfo, resource);
     }
 
     @ResponseBody
+    @PreAuthorize("@authz.check('video:cloud-record:collect')")
     @GetMapping("/record/collect/add")
     @Operation(summary = "添加收藏")
     @Parameter(name = "app", description = "应用名", required = false)
@@ -428,13 +544,19 @@ public class CameraChannelController {
     public int addCollect(@RequestParam(required = false) String app, @RequestParam(required = false) String stream, @RequestParam(required = false) String mediaServerId, @RequestParam(required = false) String startTime, @RequestParam(required = false) String endTime, @RequestParam(required = false) String callId, @RequestParam(required = false) Integer recordId) {
         log.info("[云端录像] 添加收藏，app={}，stream={},mediaServerId={},startTime={},endTime={},callId={},recordId={}", app, stream, mediaServerId, startTime, endTime, callId, recordId);
         if (recordId != null) {
+            derivedResourceAccessAuthorizer.requireRecord(
+                    CLOUD_RECORD_COLLECT_PERMISSION, recordId);
             return cloudRecordService.changeCollectById(recordId, true);
         } else {
-            return cloudRecordService.changeCollect(true, app, stream, mediaServerId, startTime, endTime, callId);
+            return cloudRecordService.changeCollect(
+                    true, app, stream, mediaServerId, startTime, endTime, callId,
+                    authorizationFacade.resolveVideoScopeQuery(
+                            CLOUD_RECORD_COLLECT_PERMISSION));
         }
     }
 
     @ResponseBody
+    @PreAuthorize("@authz.check('video:cloud-record:collect')")
     @GetMapping("/record/collect/delete")
     @Operation(summary = "移除收藏")
     @Parameter(name = "app", description = "应用名", required = false)
@@ -447,174 +569,36 @@ public class CameraChannelController {
     public int deleteCollect(@RequestParam(required = false) String app, @RequestParam(required = false) String stream, @RequestParam(required = false) String mediaServerId, @RequestParam(required = false) String startTime, @RequestParam(required = false) String endTime, @RequestParam(required = false) String callId, @RequestParam(required = false) Integer recordId) {
         log.info("[云端录像] 移除收藏，app={}，stream={},mediaServerId={},startTime={},endTime={},callId={},recordId={}", app, stream, mediaServerId, startTime, endTime, callId, recordId);
         if (recordId != null) {
+            derivedResourceAccessAuthorizer.requireRecord(
+                    CLOUD_RECORD_COLLECT_PERMISSION, recordId);
             return cloudRecordService.changeCollectById(recordId, false);
         } else {
-            return cloudRecordService.changeCollect(false, app, stream, mediaServerId, startTime, endTime, callId);
+            return cloudRecordService.changeCollect(
+                    false, app, stream, mediaServerId, startTime, endTime, callId,
+                    authorizationFacade.resolveVideoScopeQuery(
+                            CLOUD_RECORD_COLLECT_PERMISSION));
         }
     }
 
-    /************************* 以下这些接口只适合wvp和zlm部署在同一台服务器的情况，且wvp只有一个zlm节点的情况 ***************************************/
-
-    /**
-     * 下载指定录像文件的压缩包
-     * @param app 应用名
-     * @param stream 流ID
-     * @param callId 每次录像的唯一标识，置空则查询全部流媒体
-     */
     @ResponseBody
+    @PreAuthorize("@authz.check('video:cloud-record:download')")
     @GetMapping("/record/zip")
-    public void downloadZipFile(HttpServletResponse response,
-                                @RequestParam(required = false) String app,
-                                @RequestParam(required = false) String stream,
-                                @RequestParam(required = false) String callId
-
-    ) {
-        log.info("[下载指定录像文件的压缩包] 查询 app->{}, stream->{}, callId->{}", app, stream, callId);
-
-        if (app != null && ObjectUtils.isEmpty(app.trim())) {
-            app = null;
-        }
-        if (stream != null && ObjectUtils.isEmpty(stream.trim())) {
-            stream = null;
-        }
-        if (callId != null && ObjectUtils.isEmpty(callId.trim())) {
-            callId = null;
-        }
-        // 设置响应头
-        response.setContentType("application/zip");
-        response.setCharacterEncoding("UTF-8");
-        if (stream != null && callId != null) {
-            response.addHeader("Content-Disposition", "attachment;filename=" + stream + "_" + callId + ".zip");
-        }
-        List<CloudRecordUrl> cloudRecordItemList = cloudRecordService.getUrlList(app, stream, callId);
-        if (ObjectUtils.isEmpty(cloudRecordItemList)) {
-            log.warn("[下载指定录像文件的压缩包] 未找到录像文件，app->{}, stream->{}, callId->{}", app, stream, callId);
-            return;
-        }
-
-        try (ZipOutputStream zos = new ZipOutputStream(response.getOutputStream())) {
-            for (CloudRecordUrl recordUrl : cloudRecordItemList) {
-                try {
-                    zos.putNextEntry(new ZipEntry(recordUrl.getFileName()));
-                    boolean downloadSuccess = HttpUtils.downLoadFile(recordUrl.getDownloadUrl(), zos);
-                    if (!downloadSuccess) {
-                        log.warn("[下载指定录像文件的压缩包] 下载文件失败: {}", recordUrl.getDownloadUrl());
-                        zos.closeEntry();
-                        continue;
-                    }
-                    zos.closeEntry();
-                } catch (Exception e) {
-                    log.error("[下载指定录像文件的压缩包] 处理文件失败: {}, 错误: {}", recordUrl.getFileName(), e.getMessage());
-                    // 继续处理下一个文件
-                }
-            }
-        } catch (IOException e) {
-            log.error("[下载指定录像文件的压缩包] 创建压缩包失败，查询 app->{}, stream->{}, callId->{}", app, stream, callId, e);
-        }
+    public DownloadTicketResponse downloadZipFile(
+            @RequestParam List<Integer> ids) {
+        derivedResourceAccessAuthorizer.requireAllRecords(
+                CLOUD_RECORD_DOWNLOAD_PERMISSION, ids);
+        return downloadTicketService.issue(DownloadTicketRequest.batch(
+                DownloadResourceType.CLOUD_RECORD_ZIP,
+                ids.stream().map(Integer::longValue).toList()));
     }
 
-    /**
-     *
-     * @param query 检索内容
-     * @param app 应用名
-     * @param stream 流ID
-     * @param startTime 开始时间(yyyy-MM-dd HH:mm:ss)
-     * @param endTime 结束时间(yyyy-MM-dd HH:mm:ss)
-     * @param mediaServerId 流媒体ID，置空则查询全部流媒体
-     * @param callId 每次录像的唯一标识，置空则查询全部流媒体
-     * @param remoteHost 拼接播放地址时使用的远程地址
-     */
-    @ResponseBody
-    @GetMapping("/record/list-url")
-    @Operation(summary = "分页查询云端录像", security = @SecurityRequirement(name = JwtUtils.HEADER))
-    @Parameter(name = "query", description = "检索内容", required = false)
-    @Parameter(name = "app", description = "应用名", required = false)
-    @Parameter(name = "stream", description = "流ID", required = false)
-    @Parameter(name = "page", description = "当前页", required = true)
-    @Parameter(name = "count", description = "每页查询数量", required = true)
-    @Parameter(name = "startTime", description = "开始时间(yyyy-MM-dd HH:mm:ss)", required = false)
-    @Parameter(name = "endTime", description = "结束时间(yyyy-MM-dd HH:mm:ss)", required = false)
-    @Parameter(name = "mediaServerId", description = "流媒体ID，置空则查询全部流媒体", required = false)
-    @Parameter(name = "callId", description = "每次录像的唯一标识，置空则查询全部流媒体", required = false)
-    public PageInfo<CloudRecordUrl> getListWithUrl(HttpServletRequest request, @RequestParam(required = false) String query, @RequestParam(required = false) String app, @RequestParam(required = false) String stream, @RequestParam int page, @RequestParam int count, @RequestParam(required = false) String startTime, @RequestParam(required = false) String endTime, @RequestParam(required = false) String mediaServerId, @RequestParam(required = false) String callId, @RequestParam(required = false) String remoteHost
-
-    ) {
-        log.info("[云端录像] 查询URL app->{}, stream->{}, mediaServerId->{}, page->{}, count->{}, startTime->{}, endTime->{}, callId->{}", app, stream, mediaServerId, page, count, startTime, endTime, callId);
-
-        List<MediaServer> mediaServers;
-        if (!ObjectUtils.isEmpty(mediaServerId)) {
-            mediaServers = new ArrayList<>();
-            MediaServer mediaServer = mediaServerService.getOne(mediaServerId);
-            if (mediaServer == null) {
-                throw new ControllerException(ErrorCode.ERROR100.getCode(), "未找到流媒体: " + mediaServerId);
-            }
-            mediaServers.add(mediaServer);
-        } else {
-            mediaServers = null;
-        }
-        if (query != null && ObjectUtils.isEmpty(query.trim())) {
-            query = null;
-        }
-        if (app != null && ObjectUtils.isEmpty(app.trim())) {
-            app = null;
-        }
-        if (stream != null && ObjectUtils.isEmpty(stream.trim())) {
-            stream = null;
-        }
-        if (startTime != null && ObjectUtils.isEmpty(startTime.trim())) {
-            startTime = null;
-        }
-        if (endTime != null && ObjectUtils.isEmpty(endTime.trim())) {
-            endTime = null;
-        }
-        if (callId != null && ObjectUtils.isEmpty(callId.trim())) {
-            callId = null;
-        }
-        MediaServer mediaServer = mediaServerService.getDefaultMediaServer();
-        if (mediaServer == null) {
-            throw new ControllerException(ErrorCode.ERROR100.getCode(), "未找到流媒体节点");
-        }
-        if (remoteHost == null) {
-            remoteHost = request.getScheme() + "://" + request.getLocalAddr() + ":" + (request.getScheme().equals("https") ? mediaServer.getHttpSSlPort() : mediaServer.getHttpPort());
-        }
-        PageInfo<CloudRecordItem> cloudRecordItemPageInfo = cloudRecordService.getList(page, count, query, app, stream, startTime, endTime, mediaServers, callId, null);
-        PageInfo<CloudRecordUrl> cloudRecordUrlPageInfo = new PageInfo<>();
-        if (!ObjectUtils.isEmpty(cloudRecordItemPageInfo)) {
-            cloudRecordUrlPageInfo.setPageNum(cloudRecordItemPageInfo.getPageNum());
-            cloudRecordUrlPageInfo.setPageSize(cloudRecordItemPageInfo.getPageSize());
-            cloudRecordUrlPageInfo.setSize(cloudRecordItemPageInfo.getSize());
-            cloudRecordUrlPageInfo.setEndRow(cloudRecordItemPageInfo.getEndRow());
-            cloudRecordUrlPageInfo.setStartRow(cloudRecordItemPageInfo.getStartRow());
-            cloudRecordUrlPageInfo.setPages(cloudRecordItemPageInfo.getPages());
-            cloudRecordUrlPageInfo.setPrePage(cloudRecordItemPageInfo.getPrePage());
-            cloudRecordUrlPageInfo.setNextPage(cloudRecordItemPageInfo.getNextPage());
-            cloudRecordUrlPageInfo.setIsFirstPage(cloudRecordItemPageInfo.isIsFirstPage());
-            cloudRecordUrlPageInfo.setIsLastPage(cloudRecordItemPageInfo.isIsLastPage());
-            cloudRecordUrlPageInfo.setHasPreviousPage(cloudRecordItemPageInfo.isHasPreviousPage());
-            cloudRecordUrlPageInfo.setHasNextPage(cloudRecordItemPageInfo.isHasNextPage());
-            cloudRecordUrlPageInfo.setNavigatePages(cloudRecordItemPageInfo.getNavigatePages());
-            cloudRecordUrlPageInfo.setNavigateFirstPage(cloudRecordItemPageInfo.getNavigateFirstPage());
-            cloudRecordUrlPageInfo.setNavigateLastPage(cloudRecordItemPageInfo.getNavigateLastPage());
-            cloudRecordUrlPageInfo.setNavigatepageNums(cloudRecordItemPageInfo.getNavigatepageNums());
-            cloudRecordUrlPageInfo.setTotal(cloudRecordItemPageInfo.getTotal());
-            List<CloudRecordUrl> cloudRecordUrlList = new ArrayList<>(cloudRecordItemPageInfo.getList().size());
-            List<CloudRecordItem> cloudRecordItemList = cloudRecordItemPageInfo.getList();
-            for (CloudRecordItem cloudRecordItem : cloudRecordItemList) {
-                CloudRecordUrl cloudRecordUrl = new CloudRecordUrl();
-                cloudRecordUrl.setId(cloudRecordItem.getId());
-                cloudRecordUrl.setDownloadUrl(remoteHost + "/index/api/downloadFile?file_path=" + cloudRecordItem.getFilePath() + "&save_name=" + cloudRecordItem.getStream() + "_" + cloudRecordItem.getCallId() + "_" + DateUtil.timestampMsToUrlToyyyy_MM_dd_HH_mm_ss((long)cloudRecordItem.getStartTime()));
-                cloudRecordUrl.setPlayUrl(remoteHost + "/index/api/downloadFile?file_path=" + cloudRecordItem.getFilePath());
-                cloudRecordUrlList.add(cloudRecordUrl);
-            }
-            cloudRecordUrlPageInfo.setList(cloudRecordUrlList);
-        }
-        return cloudRecordUrlPageInfo;
-    }
-
+    @PreAuthorize("@authz.check('video:push:stop')")
     @GetMapping(value = "/forceClose")
     @ResponseBody
     @Operation(summary = "强制停止推流", security = @SecurityRequirement(name = JwtUtils.HEADER))
     public void stop(String app, String stream){
+        streamResourceAccessAuthorizer.requirePush(
+                PUSH_STOP_PERMISSION, app, stream);
         streamPushPlayService.stop(app, stream);
     }
 
@@ -623,12 +607,17 @@ public class CameraChannelController {
     @Operation(summary = "查询会议设备", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "topGroupAlias", description = "分组别名")
     public List<CameraChannel> queryMeetingChannelList(String topGroupAlias){
-        return channelService.queryMeetingChannelList(topGroupAlias);
+        return channelService.queryMeetingChannelList(
+                topGroupAlias,
+                authorizationFacade.resolveVideoScopeQuery(
+                        CHANNEL_LIST_PERMISSION));
     }
 
     @GetMapping(value = "/test")
     @ResponseBody
     public SYMember test(String device){
+        channelAccessAuthorizer.requireUnifiedChannelHidden(
+                CHANNEL_LIST_PERMISSION, device, null);
         return channelService.getMember(device);
     }
 

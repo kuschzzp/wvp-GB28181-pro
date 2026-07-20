@@ -56,7 +56,7 @@
           </el-input>
         </el-form-item>
         <el-form-item >
-          <el-dropdown >
+          <el-dropdown v-hasPermi="['video:channel:edit']">
             <el-button type="primary">
               批量操作<i class="el-icon-arrow-down el-icon--right"></i>
             </el-button>
@@ -112,6 +112,7 @@
         <el-table-column label="操作" min-width="210" fixed="right">
           <template v-slot:default="scope">
             <el-button
+              v-hasPermi="['video:channel:play']"
               size="medium"
               :disabled="scope.row.gbStatus !== 'ON'"
               icon="el-icon-video-play"
@@ -122,6 +123,7 @@
             </el-button>
             <el-button
               v-if="!!scope.row.streamId"
+              v-hasPermi="['video:channel:stop']"
               size="medium"
               icon="el-icon-switch-button"
               type="text"
@@ -131,27 +133,46 @@
             </el-button>
             <el-divider direction="vertical" />
             <el-button
+              v-hasPermi="['video:channel:edit']"
               size="medium"
               type="text"
               icon="el-icon-edit"
-              v-if="$store.getters.authority !== 2"
               @click="handleEdit(scope.row)"
             >
               编辑
             </el-button>
             <el-divider direction="vertical" />
-            <el-dropdown @command="(command)=>{moreClick(command, scope.row)}">
+            <el-dropdown
+              v-if="$auth.hasPermi(['video:record:list', 'video:cloud-record:list', 'video:ptz:control', 'video:ptz:preset', 'video:ptz:cruise', 'video:channel:talk'])"
+              @command="(command)=>{moreClick(command, scope.row)}"
+            >
               <el-button size="medium" type="text">
                 更多<i class="el-icon-arrow-down el-icon--right" />
               </el-button>
               <el-dropdown-menu>
-                <el-dropdown-item command="records" :disabled="scope.row.gbStatus !== 'ON'">
+                <el-dropdown-item
+                  v-if="$auth.hasPermi(['video:record:list'])"
+                  command="records"
+                  :disabled="scope.row.gbStatus !== 'ON'"
+                >
                   设备录像</el-dropdown-item>
-                <el-dropdown-item command="cloudRecords" :disabled="scope.row.gbStatus !== 'ON'">
+                <el-dropdown-item
+                  v-if="$auth.hasPermi(['video:cloud-record:list'])"
+                  command="cloudRecords"
+                  :disabled="scope.row.gbStatus !== 'ON'"
+                >
                   云端录像</el-dropdown-item>
-                <el-dropdown-item command="ptzConfig" :disabled="scope.row.gbStatus !== 'ON'">
+                <el-dropdown-item
+                  v-if="$auth.hasPermi(['video:ptz:control', 'video:ptz:preset', 'video:ptz:cruise'])"
+                  command="ptzConfig"
+                  :disabled="scope.row.gbStatus !== 'ON'"
+                >
                   云台配置</el-dropdown-item>
-                <el-dropdown-item command="audioTalk" :disabled="scope.row.gbStatus !== 'ON'">
+                <el-dropdown-item
+                  v-if="$auth.hasPermi(['video:channel:talk'])"
+                  command="audioTalk"
+                  :disabled="scope.row.gbStatus !== 'ON'"
+                >
                   语音对讲</el-dropdown-item>
               </el-dropdown-menu>
 
@@ -315,6 +336,7 @@ export default {
 
     // 通知设备上传媒体流
     sendDevicePush: function(itemData) {
+      if (!this.$auth.hasPermi(['video:channel:play'])) return
       itemData.playLoading = true
       this.$store.dispatch('commonChanel/playChannel', itemData.gbId)
         .then((data) => {
@@ -349,6 +371,7 @@ export default {
       this.$router.push(`/cloudRecord/detail/rtp/${deviceId}_${channelId}`)
     },
     stopDevicePush: function(itemData) {
+      if (!this.$auth.hasPermi(['video:channel:stop'])) return
       this.$store.dispatch('commonChanel/stopPlayChannel', itemData.gbId).then(data => {
         this.initData()
       }).catch((error) => {
@@ -358,27 +381,6 @@ export default {
           console.log(error)
         }
       })
-    },
-    getSnap: function(row) {
-      const baseUrl = window.baseUrl ? window.baseUrl : ''
-      return ((process.env.NODE_ENV === 'development') ? process.env.VUE_APP_BASE_API : baseUrl) + '/api/device/query/snap/' + this.deviceId + '/' + row.deviceId
-    },
-    getBigSnap: function(row) {
-      return [this.getSnap(row)]
-    },
-    getSnapErrorEvent: function(deviceId, channelId) {
-      if (typeof (this.loadSnap[deviceId + channelId]) !== 'undefined') {
-        console.log('下载截图' + this.loadSnap[deviceId + channelId])
-        if (this.loadSnap[deviceId + channelId] > 5) {
-          delete this.loadSnap[deviceId + channelId]
-          return
-        }
-        setTimeout(() => {
-          const url = (process.env.NODE_ENV === 'development' ? 'debug' : '') + '/api/device/query/snap/' + deviceId + '/' + channelId
-          this.loadSnap[deviceId + channelId]++
-          document.getElementById(deviceId + channelId).setAttribute('src', url + '?' + new Date().getTime())
-        }, 1000)
-      }
     },
     search: function() {
       this.currentPage = 1
@@ -399,6 +401,14 @@ export default {
       this.getChannelList()
     },
     moreClick: function(command, itemData) {
+      const permissions = {
+        records: 'video:record:list',
+        cloudRecords: 'video:cloud-record:list',
+        ptzConfig: ['video:ptz:control', 'video:ptz:preset', 'video:ptz:cruise'],
+        audioTalk: 'video:channel:talk'
+      }
+      const requiredPermissions = Array.isArray(permissions[command]) ? permissions[command] : [permissions[command]]
+      if (!permissions[command] || !this.$auth.hasPermi(requiredPermissions)) return
       if (command === 'records') {
         this.queryRecords(itemData)
       } else if (command === 'cloudRecords') {
@@ -425,6 +435,7 @@ export default {
       return channelIds
     },
     batchChangeRegion: function() {
+      if (!this.$auth.hasPermi(['video:channel:edit'])) return
       let ids = this.getCheckIds()
       if (ids.length === 0) {
         return
@@ -458,6 +469,7 @@ export default {
       })
     },
     batchChangeGroup: function() {
+      if (!this.$auth.hasPermi(['video:channel:edit'])) return
       let ids = this.getCheckIds()
       if (ids.length === 0) {
         return

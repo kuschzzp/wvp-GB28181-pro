@@ -14,6 +14,7 @@ import org.apache.commons.compress.utils.IOUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.servlet.ServletOutputStream;
@@ -25,10 +26,15 @@ import java.nio.file.Files;
 import java.util.List;
 
 @SuppressWarnings("rawtypes")
-@Tag(name = "日志文件查询接口")
+/**
+ * 查询和下载服务器本地日志文件，属于全局运维能力，不应用部门数据范围。
+ * 人员授权操作审计由 /api/system/operation-log 提供并按部门快照过滤。
+ */
+@Tag(name = "服务器日志文件查询接口")
 @Slf4j
 @RestController
 @RequestMapping("/api/log")
+@PreAuthorize("@authz.require('operations:log:view')")
 public class LogController {
 
     @Autowired
@@ -60,6 +66,7 @@ public class LogController {
      * 下载指定日志文件
      */
     @ResponseBody
+    @PreAuthorize("@authz.require('operations:log:download')")
     @GetMapping("/file/{fileName}")
     public void downloadFile(HttpServletResponse response, @PathVariable  String fileName) {
         try {

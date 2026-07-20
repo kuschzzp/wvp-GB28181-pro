@@ -12,7 +12,7 @@ public class AudioBroadcastResult {
     /**
      * 推流的各个方式流地址
      */
-    private StreamContent streamInfo;
+    private MediaPublishEndpoint streamInfo;
 
     /**
      * 编码格式

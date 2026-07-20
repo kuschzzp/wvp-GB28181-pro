@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.service.impl;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.common.StreamInfo;
 import com.genersoft.iot.vmp.conf.exception.ControllerException;
 import com.genersoft.iot.vmp.gb28181.bean.CommonGBChannel;
@@ -265,24 +266,48 @@ public class RecordPlanServiceImpl implements IRecordPlanService {
     }
 
     @Override
-    public PageInfo<CommonGBChannel> queryChannelList(int page, int count, String query, Integer dataType, Boolean online, Integer planId, Boolean hasLink) {
+    public PageInfo<CommonGBChannel> queryChannelList(
+            int page,
+            int count,
+            String query,
+            Integer dataType,
+            Boolean online,
+            Integer planId,
+            Boolean hasLink,
+            VideoScopeQuery scope) {
         PageHelper.startPage(page, count);
         if (query != null) {
             query = query.replaceAll("/", "//")
                     .replaceAll("%", "/%")
                     .replaceAll("_", "/_");
         }
-        List<CommonGBChannel> all = channelMapper.queryForRecordPlanForWebList(planId, query, dataType, online, hasLink);
+        List<CommonGBChannel> all = channelMapper.queryForRecordPlanForWebListScoped(
+                planId, query, dataType, online, hasLink, scope);
         return new PageInfo<>(all);
     }
 
     @Override
-    public void linkAll(Integer planId) {
-        channelMapper.addRecordPlanForAll(planId);
+    public void linkAll(Integer planId, VideoScopeQuery scope) {
+        List<Integer> channelIds = channelMapper.queryRecordPlanChannelIds(
+                null, null, scope);
+        if (!channelIds.isEmpty()) {
+            channelMapper.addRecordPlan(channelIds, planId);
+            execution();
+        }
     }
 
     @Override
-    public void cleanAll(Integer planId) {
-        channelMapper.removeRecordPlanByPlanId(planId);
+    public void cleanAll(Integer planId, VideoScopeQuery scope) {
+        List<Integer> channelIds = channelMapper.queryRecordPlanChannelIds(
+                planId, true, scope);
+        if (!channelIds.isEmpty()) {
+            channelMapper.removeRecordPlan(channelIds);
+            execution();
+        }
+    }
+
+    @Override
+    public List<Integer> getLinkedChannelIds(Integer planId) {
+        return channelMapper.getLinkedChannelIds(planId);
     }
 }

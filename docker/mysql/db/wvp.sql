@@ -204,6 +204,12 @@ create table IF NOT EXISTS wvp_media_server
     create_time         character varying(50),
     update_time         character varying(50),
     hook_alive_interval integer,
+    hook_secret_hash character varying(64),
+    previous_hook_secret_hash character varying(64),
+    previous_hook_secret_expires_at timestamp,
+    hook_secret_version bigint not null default 0,
+    hook_allowed_cidrs character varying(2000),
+    hook_auth_enabled bool not null default true,
     record_path         character varying(255),
     record_day          integer               default 7,
     transcode_suffix    character varying(255),
@@ -474,10 +480,8 @@ create table IF NOT EXISTS wvp_record_plan_item
     update_time     character varying(50)
 );
 
-/*
-* 20240528
-*/
-DELIMITER //  -- 重定义分隔符避免分号冲突
+-- 20240528
+delimiter //
 CREATE PROCEDURE `wvp_20240528`()
 BEGIN
     IF NOT EXISTS (SELECT column_name FROM information_schema.columns
@@ -517,9 +521,9 @@ BEGIN
         alter table wvp_media_server add ws_flv_ssl_port integer;
     END IF;
 END; //
-call wvp_20240528();
-DROP PROCEDURE wvp_20240528;
-DELIMITER ;
+call wvp_20240528()//
+DROP PROCEDURE wvp_20240528//
+delimiter ;
 
 create table IF NOT EXISTS wvp_user_api_key (
                                   id serial primary key ,
@@ -533,10 +537,8 @@ create table IF NOT EXISTS wvp_user_api_key (
                                   update_time character varying(50)
 );
 
-/*
-* 20241222
-*/
-DELIMITER //  -- 重定义分隔符避免分号冲突
+-- 20241222
+delimiter //
 CREATE PROCEDURE `wvp_20241222`()
 BEGIN
     IF EXISTS (SELECT column_name FROM information_schema.STATISTICS
@@ -596,13 +598,11 @@ BEGIN
         alter table wvp_device_channel drop stream_proxy_id;
     END IF;
 END; //
-call wvp_20241222();
-DROP PROCEDURE wvp_20241222;
-DELIMITER ;
-/*
-* 20241231
-*/
-DELIMITER //
+call wvp_20241222()//
+DROP PROCEDURE wvp_20241222//
+delimiter ;
+-- 20241231
+delimiter //
 CREATE PROCEDURE `wvp_20241231`()
 BEGIN
     IF not EXISTS (SELECT column_name FROM information_schema.columns
@@ -611,13 +611,11 @@ BEGIN
         alter table wvp_stream_proxy add relates_media_server_id character varying(50);
     END IF;
 END; //
-call wvp_20241231();
-DROP PROCEDURE wvp_20241231;
-DELIMITER ;
-/*
-* 20250111
-*/
-DELIMITER //  -- 重定义分隔符避免分号冲突
+call wvp_20241231()//
+DROP PROCEDURE wvp_20241231//
+delimiter ;
+-- 20250111
+delimiter //
 CREATE PROCEDURE `wvp_20250111`()
 BEGIN
     IF EXISTS (SELECT column_name FROM information_schema.STATISTICS
@@ -638,14 +636,12 @@ BEGIN
         alter table wvp_cloud_record modify file_path varchar(500) null;
     END IF;
 END; //
-call wvp_20250111();
-DROP PROCEDURE wvp_20250111;
-DELIMITER ;
+call wvp_20250111()//
+DROP PROCEDURE wvp_20250111//
+delimiter ;
 
-/*
-* 20250211
-*/
-DELIMITER //  -- 重定义分隔符避免分号冲突
+-- 20250211
+delimiter //
 CREATE PROCEDURE `wvp_20250211`()
 BEGIN
     IF EXISTS (SELECT column_name FROM information_schema.STATISTICS
@@ -666,14 +662,12 @@ BEGIN
         alter table wvp_device add position_capability integer;
     END IF;
 END; //
-call wvp_20250211();
-DROP PROCEDURE wvp_20250211;
-DELIMITER ;
+call wvp_20250211()//
+DROP PROCEDURE wvp_20250211//
+delimiter ;
 
-/**
-  * 20250312
- */
-DELIMITER //  -- 重定义分隔符避免分号冲突
+-- 20250312
+delimiter //
 CREATE PROCEDURE `wvp_20250312`()
 BEGIN
     DECLARE serverId VARCHAR(32) DEFAULT '你的服务ID';
@@ -711,14 +705,12 @@ BEGIN
         alter table wvp_platform add server_id character varying(50);
     END IF;
 END; //
-call wvp_20250312();
-DROP PROCEDURE wvp_20250312;
-DELIMITER ;
+call wvp_20250312()//
+DROP PROCEDURE wvp_20250312//
+delimiter ;
 
-/*
-* 20250319
-*/
-DELIMITER //  -- 重定义分隔符避免分号冲突
+-- 20250319
+delimiter //
 CREATE PROCEDURE `wvp_20250319`()
 BEGIN
     IF NOT EXISTS (SELECT column_name FROM information_schema.columns
@@ -739,14 +731,12 @@ BEGIN
         alter table wvp_device_channel add gps_direction double precision;
     END IF;
 END; //
-call wvp_20250319();
-DROP PROCEDURE wvp_20250319;
-DELIMITER ;
+call wvp_20250319()//
+DROP PROCEDURE wvp_20250319//
+delimiter ;
 
-/*
-* 20250402
-*/
-DELIMITER //  -- 重定义分隔符避免分号冲突
+-- 20250402
+delimiter //
 CREATE PROCEDURE `wvp_20250402`()
 BEGIN
     IF NOT EXISTS (SELECT column_name FROM information_schema.STATISTICS
@@ -761,9 +751,6 @@ BEGIN
     END IF;
 
 END; //
-call wvp_20250402();
-DROP PROCEDURE wvp_20250402;
-DELIMITER ;
-
-
-
+call wvp_20250402()//
+DROP PROCEDURE wvp_20250402//
+delimiter ;

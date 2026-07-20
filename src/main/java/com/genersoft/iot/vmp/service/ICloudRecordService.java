@@ -1,12 +1,12 @@
 package com.genersoft.iot.vmp.service;
 
 import com.alibaba.fastjson2.JSONArray;
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.common.StreamInfo;
 import com.genersoft.iot.vmp.media.bean.MediaServer;
 import com.genersoft.iot.vmp.service.bean.CloudRecordItem;
 import com.genersoft.iot.vmp.service.bean.DownloadFileInfo;
 import com.genersoft.iot.vmp.service.bean.ErrorCallback;
-import com.genersoft.iot.vmp.vmanager.cloudRecord.bean.CloudRecordUrl;
 import com.github.pagehelper.PageInfo;
 
 import java.util.List;
@@ -21,29 +21,63 @@ public interface ICloudRecordService {
     /**
      * 分页回去云端录像列表
      */
-    PageInfo<CloudRecordItem> getList(int page, int count, String query,  String app, String stream, String startTime, String endTime, List<MediaServer> mediaServerItems, String callId, Boolean ascOrder);
+    PageInfo<CloudRecordItem> getList(
+            int page,
+            int count,
+            String query,
+            String app,
+            String stream,
+            String startTime,
+            String endTime,
+            List<MediaServer> mediaServerItems,
+            String callId,
+            Boolean ascOrder,
+            VideoScopeQuery scope);
 
     /**
      * 获取所有的日期
      */
-    List<String> getDateList(String app, String stream, int year, int month, List<MediaServer> mediaServerItems);
+    List<String> getDateList(
+            String app,
+            String stream,
+            int year,
+            int month,
+            List<MediaServer> mediaServerItems,
+            VideoScopeQuery scope);
 
     /**
      * 添加合并任务
      */
     String addTask(String app, String stream, MediaServer mediaServerItem, String startTime,
-                   String endTime, String callId, String remoteHost, boolean filterMediaServer);
+                   String endTime, String callId, String remoteHost, boolean filterMediaServer,
+                   VideoScopeQuery scope);
 
 
     /**
      * 查询合并任务列表
      */
-    JSONArray queryTask(String app, String stream, String callId, String taskId, String mediaServerId, Boolean isEnd, String scheme);
+    JSONArray queryTask(
+            String app,
+            String stream,
+            String callId,
+            String taskId,
+            String mediaServerId,
+            Boolean isEnd,
+            String scheme,
+            VideoScopeQuery scope);
 
     /**
      * 收藏视频，收藏的视频过期不会删除
      */
-    int changeCollect(boolean result, String app, String stream, String mediaServerId, String startTime, String endTime, String callId);
+    int changeCollect(
+            boolean result,
+            String app,
+            String stream,
+            String mediaServerId,
+            String startTime,
+            String endTime,
+            String callId,
+            VideoScopeQuery scope);
 
     /**
      * 添加指定录像收藏
@@ -55,7 +89,26 @@ public interface ICloudRecordService {
      */
     DownloadFileInfo getPlayUrlPath(Integer recordId);
 
-    List<CloudRecordItem> getAllList(String query, String app, String stream, String startTime, String endTime, List<MediaServer> mediaServerItems, String callId, List<Integer> ids);
+    List<CloudRecordItem> getAllList(
+            String query,
+            String app,
+            String stream,
+            String startTime,
+            String endTime,
+            List<MediaServer> mediaServerItems,
+            String callId,
+            List<Integer> ids,
+            VideoScopeQuery scope);
+
+    List<CloudRecordItem> getAllListForInternalPlayback(
+            String query,
+            String app,
+            String stream,
+            String startTime,
+            String endTime,
+            List<MediaServer> mediaServerItems,
+            String callId,
+            List<Integer> ids);
 
     /**
      * 加载录像文件，形成录像流
@@ -70,7 +123,4 @@ public interface ICloudRecordService {
 
     void loadMP4File(String app, String stream, int cloudRecordId, ErrorCallback<StreamInfo> callback);
 
-    List<CloudRecordUrl> getUrlListByIds(List<Integer> ids);
-
-    List<CloudRecordUrl> getUrlList(String app, String stream, String callId);
 }

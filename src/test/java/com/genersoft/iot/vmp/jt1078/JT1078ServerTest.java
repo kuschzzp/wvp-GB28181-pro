@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.jt1078;
 
+import com.genersoft.iot.vmp.auth.internal.InternalInvocationGuard;
 import com.genersoft.iot.vmp.jt1078.cmd.JT1078Template;
 import com.genersoft.iot.vmp.jt1078.codec.netty.TcpServer;
 import com.genersoft.iot.vmp.jt1078.proc.response.J9102;
@@ -20,7 +21,8 @@ public class JT1078ServerTest {
 
     public static void main(String[] args) {
         System.out.println("Starting jt1078 server...");
-        TcpServer tcpServer = new TcpServer(21078, null, null, null);
+        TcpServer tcpServer = new TcpServer(
+                21078, null, null, null, new InternalInvocationGuard());
         tcpServer.start();
         System.out.println("Start jt1078 server success!");
 

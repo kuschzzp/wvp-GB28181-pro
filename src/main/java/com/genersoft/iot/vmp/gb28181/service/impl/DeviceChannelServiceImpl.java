@@ -1,5 +1,9 @@
 package com.genersoft.iot.vmp.gb28181.service.impl;
 
+import com.genersoft.iot.vmp.authorization.video.VideoResourceLifecycleService;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceRef;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceType;
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.common.InviteInfo;
 import com.genersoft.iot.vmp.common.InviteSessionType;
 import com.genersoft.iot.vmp.common.enums.ChannelDataType;
@@ -92,6 +96,9 @@ public class DeviceChannelServiceImpl implements IDeviceChannelService {
     @Autowired
     private ISIPCommander commander;
 
+    @Autowired
+    private VideoResourceLifecycleService resourceLifecycleService;
+
     // 记录录像查询的结果等待
     private final Map<String, SynchronousQueue<RecordInfo>> topicSubscribers = new ConcurrentHashMap<>();
 
@@ -172,10 +179,8 @@ public class DeviceChannelServiceImpl implements IDeviceChannelService {
     }
 
     @Override
-    public ResourceBaseInfo getOverview() {
-        int online = channelMapper.getOnlineCount();
-        int total = channelMapper.getAllChannelCount();
-        return new ResourceBaseInfo(total, online);
+    public ResourceBaseInfo getOverview(VideoScopeQuery scope) {
+        return channelMapper.getOverview(scope);
     }
 
     @Override
@@ -189,7 +194,21 @@ public class DeviceChannelServiceImpl implements IDeviceChannelService {
     }
 
     @Override
+    @Transactional
     public void deleteForNotify(DeviceChannel channel) {
+        DeviceChannel existing = channel;
+        if (channel != null
+                && channel.getId() <= 0
+                && channel.getDataDeviceId() != null
+                && channel.getDataDeviceId() > 0
+                && channel.getDeviceId() != null) {
+            existing = channelMapper.getOneByDeviceIdForSource(
+                    channel.getDataDeviceId(), channel.getDeviceId());
+        }
+        if (existing != null && existing.getId() > 0) {
+            resourceLifecycleService.remove(new VideoResourceRef(
+                    VideoResourceType.CHANNEL, existing.getId()));
+        }
         channelMapper.deleteForNotify(channel);
     }
 
@@ -351,7 +370,18 @@ public class DeviceChannelServiceImpl implements IDeviceChannelService {
     }
 
     @Override
+    @Transactional
     public void cleanChannelsForDevice(int deviceId) {
+        List<DeviceChannel> channels =
+                channelMapper.queryChannelsByDeviceDbId(deviceId);
+        if (channels != null && !channels.isEmpty()) {
+            resourceLifecycleService.removeAll(channels.stream()
+                    .filter(Objects::nonNull)
+                    .filter(channel -> channel.getId() > 0)
+                    .map(channel -> new VideoResourceRef(
+                            VideoResourceType.CHANNEL, channel.getId()))
+                    .toList());
+        }
         channelMapper.cleanChannelsByDeviceId(deviceId);
     }
 
@@ -362,10 +392,15 @@ public class DeviceChannelServiceImpl implements IDeviceChannelService {
             return false;
         }
         List<DeviceChannel> allChannels = channelMapper.queryAllChannelsForRefresh(deviceDbId);
-        Map<String,DeviceChannel> allChannelMap = new HashMap<>();
+        Map<ChannelStableKey, DeviceChannel> allChannelMap = new HashMap<>();
+        Map<ChannelStableKey, Integer> previousIds = new LinkedHashMap<>();
         if (!allChannels.isEmpty()) {
             for (DeviceChannel deviceChannel : allChannels) {
-                allChannelMap.put(deviceChannel.getDataDeviceId() + deviceChannel.getDeviceId(), deviceChannel);
+                ChannelStableKey key = stableKey(deviceDbId, deviceChannel);
+                allChannelMap.put(key, deviceChannel);
+                if (deviceChannel.getId() > 0) {
+                    previousIds.put(key, deviceChannel.getId());
+                }
             }
         }
         // 入参去重
@@ -380,9 +415,12 @@ public class DeviceChannelServiceImpl implements IDeviceChannelService {
         List<DeviceChannel> upsertChannels = new ArrayList<>();
         List<DeviceChannel> deleteChannels = new ArrayList<>();
         Map<String, Integer> subContMap = new HashMap<>();
+        Set<ChannelStableKey> incomingKeys = new LinkedHashSet<>();
 
         for (DeviceChannel deviceChannel : uniqueChannels) {
-            DeviceChannel channelInDb = allChannelMap.get(deviceChannel.getDataDeviceId() + deviceChannel.getDeviceId());
+            ChannelStableKey key = stableKey(deviceDbId, deviceChannel);
+            incomingKeys.add(key);
+            DeviceChannel channelInDb = allChannelMap.get(key);
             if (channelInDb != null) {
                 deviceChannel.setStreamId(channelInDb.getStreamId());
                 deviceChannel.setHasAudio(channelInDb.isHasAudio());
@@ -401,7 +439,7 @@ public class DeviceChannelServiceImpl implements IDeviceChannelService {
                 deviceChannel.setCreateTime(DateUtil.getNow());
                 deviceChannel.setUpdateTime(DateUtil.getNow());
             }
-            allChannelMap.remove(deviceChannel.getDataDeviceId() + deviceChannel.getDeviceId());
+            allChannelMap.remove(key);
             upsertChannels.add(deviceChannel);
             if (!ObjectUtils.isEmpty(deviceChannel.getParentId())) {
                 subContMap.merge(deviceChannel.getParentId(), 1, Integer::sum);
@@ -431,7 +469,19 @@ public class DeviceChannelServiceImpl implements IDeviceChannelService {
                 channelMapper.batchUpsert(batchList);
             }
         }
+        migrateReplacedChannelGrants(
+                deviceDbId, previousIds, incomingKeys);
         if (!deleteChannels.isEmpty()) {
+            Set<VideoResourceRef> removedResources = deleteChannels.stream()
+                    .filter(Objects::nonNull)
+                    .filter(channel -> channel.getId() > 0)
+                    .map(channel -> new VideoResourceRef(
+                            VideoResourceType.CHANNEL, channel.getId()))
+                    .collect(java.util.stream.Collectors.toCollection(
+                            LinkedHashSet::new));
+            if (!removedResources.isEmpty()) {
+                resourceLifecycleService.removeAll(removedResources);
+            }
             try {
                 // 这些通道可能关联了，上级平台需要删除同时发送消息
                 List<Integer> ids = new ArrayList<>();
@@ -458,8 +508,82 @@ public class DeviceChannelServiceImpl implements IDeviceChannelService {
 
     }
 
+    private void migrateReplacedChannelGrants(
+            int deviceDbId,
+            Map<ChannelStableKey, Integer> previousIds,
+            Set<ChannelStableKey> incomingKeys) {
+        if (previousIds.isEmpty() || incomingKeys.isEmpty()) {
+            return;
+        }
+        List<DeviceChannel> currentChannels =
+                channelMapper.queryChannelsByDeviceDbId(deviceDbId);
+        Map<ChannelStableKey, LinkedHashSet<VideoResourceRef>> candidates =
+                new LinkedHashMap<>();
+        if (currentChannels != null) {
+            for (DeviceChannel channel : currentChannels) {
+                if (channel == null || channel.getId() <= 0) {
+                    continue;
+                }
+                candidates.computeIfAbsent(
+                                stableKey(deviceDbId, channel),
+                                ignored -> new LinkedHashSet<>())
+                        .add(new VideoResourceRef(
+                                VideoResourceType.CHANNEL, channel.getId()));
+            }
+        }
+        for (ChannelStableKey key : incomingKeys) {
+            Integer previousId = previousIds.get(key);
+            if (previousId == null || previousId <= 0) {
+                continue;
+            }
+            Set<VideoResourceRef> targetCandidates = Set.copyOf(
+                    candidates.getOrDefault(key, new LinkedHashSet<>()));
+            if (targetCandidates.size() == 1
+                    && targetCandidates.iterator().next().id() == previousId) {
+                continue;
+            }
+            resourceLifecycleService.migrateUnique(
+                    new VideoResourceRef(VideoResourceType.CHANNEL, previousId),
+                    targetCandidates,
+                    key.auditValue(),
+                    null);
+        }
+    }
+
+    private ChannelStableKey stableKey(
+            int fallbackDeviceDbId,
+            DeviceChannel channel) {
+        int sourceId = channel.getDataDeviceId() == null
+                || channel.getDataDeviceId() <= 0
+                ? fallbackDeviceDbId
+                : channel.getDataDeviceId();
+        return new ChannelStableKey(sourceId, channel.getDeviceId());
+    }
+
+    private record ChannelStableKey(int sourceId, String deviceId) {
+
+        private ChannelStableKey {
+            if (sourceId <= 0 || deviceId == null || deviceId.isBlank()) {
+                throw new IllegalArgumentException("通道稳定来源标识不完整");
+            }
+        }
+
+        private String auditValue() {
+            return "gb:" + sourceId + ":" + deviceId;
+        }
+    }
+
     @Override
-    public PageInfo<DeviceChannel> getSubChannels(int deviceDbId, String channelId, String query, Boolean channelType, Boolean online, int page, int count) {
+    public PageInfo<DeviceChannel> getSubChannels(
+            int deviceDbId,
+            String channelId,
+            String query,
+            Boolean channelType,
+            Boolean online,
+            int page,
+            int count,
+            VideoScopeQuery scope) {
+        Objects.requireNonNull(scope, "scope must not be null");
         PageHelper.startPage(page, count);
         String civilCode = null;
         String parentId = null;
@@ -479,17 +603,33 @@ public class DeviceChannelServiceImpl implements IDeviceChannelService {
                     .replaceAll("%", "/%")
                     .replaceAll("_", "/_");
         }
-        List<DeviceChannel> all = channelMapper.queryChannels(deviceDbId, civilCode, businessGroupId, parentId, query, false, channelType, online, null, null);
+        List<DeviceChannel> all = channelMapper.queryChannels(
+                deviceDbId, civilCode, businessGroupId, parentId, query, false,
+                channelType, online, null, null, scope);
         return new PageInfo<>(all);
     }
 
     @Override
-    public List<DeviceChannelExtend> queryChannelExtendsByDeviceId(String deviceId, List<String> channelIds, Boolean online) {
-        return channelMapper.queryChannelsWithDeviceInfo(deviceId, null,null, null, online,channelIds);
+    public List<DeviceChannelExtend> queryChannelExtendsByDeviceId(
+            String deviceId,
+            List<String> channelIds,
+            Boolean online,
+            VideoScopeQuery scope) {
+        Objects.requireNonNull(scope, "scope must not be null");
+        return channelMapper.queryChannelsWithDeviceInfo(
+                deviceId, null, null, null, online, channelIds, scope);
     }
 
     @Override
-    public PageInfo queryChannelsByDeviceId(String deviceId, String query, Boolean hasSubChannel, Boolean online, int page, int count) {
+    public PageInfo<DeviceChannel> queryChannelsByDeviceId(
+            String deviceId,
+            String query,
+            Boolean hasSubChannel,
+            Boolean online,
+            int page,
+            int count,
+            VideoScopeQuery scope) {
+        Objects.requireNonNull(scope, "scope must not be null");
         Device device = deviceMapper.getDeviceByDeviceId(deviceId);
         if (device == null) {
             throw new ControllerException(ErrorCode.ERROR100.getCode(), "未找到设备：" + deviceId);
@@ -500,19 +640,32 @@ public class DeviceChannelServiceImpl implements IDeviceChannelService {
                     .replaceAll("_", "/_");
         }
         PageHelper.startPage(page, count);
-        List<DeviceChannel> all = channelMapper.queryChannels(device.getId(), null, null, null, query, false, hasSubChannel, online, null, null);
+        List<DeviceChannel> all = channelMapper.queryChannels(
+                device.getId(), null, null, null, query, false,
+                hasSubChannel, online, null, null, scope);
         return new PageInfo<>(all);
     }
 
     @Override
-    public PageInfo<DeviceChannel> queryChannels(String query, Boolean queryParent, Boolean hasSubChannel, Boolean online, Boolean hasStream, int page, int count) {
+    public PageInfo<DeviceChannel> queryChannels(
+            String query,
+            Boolean queryParent,
+            Boolean hasSubChannel,
+            Boolean online,
+            Boolean hasStream,
+            int page,
+            int count,
+            VideoScopeQuery scope) {
+        Objects.requireNonNull(scope, "scope must not be null");
         PageHelper.startPage(page, count);
         if (query != null) {
             query = query.replaceAll("/", "//")
                     .replaceAll("%", "/%")
                     .replaceAll("_", "/_");
         }
-        List<DeviceChannel> all = channelMapper.queryChannels(null, null, null, null, query, queryParent, hasSubChannel, online, null, hasStream);
+        List<DeviceChannel> all = channelMapper.queryChannels(
+                null, null, null, null, query, queryParent,
+                hasSubChannel, online, null, hasStream, scope);
         return new PageInfo<>(all);
     }
 

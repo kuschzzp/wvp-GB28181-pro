@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.gb28181.service.impl;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.common.enums.ChannelDataType;
 import com.genersoft.iot.vmp.conf.UserSetting;
 import com.genersoft.iot.vmp.gb28181.bean.*;
@@ -214,15 +215,43 @@ public class PlatformChannelServiceImpl implements IPlatformChannelService {
 
 
     @Override
-    public PageInfo<PlatformChannel> queryChannelList(int page, int count, String query, Integer channelType, Boolean online, Integer platformId, Boolean hasShare) {
+    public PageInfo<PlatformChannel> queryChannelList(
+            int page,
+            int count,
+            String query,
+            Integer channelType,
+            Boolean online,
+            Integer platformId,
+            Boolean hasShare,
+            VideoScopeQuery scope) {
         PageHelper.startPage(page, count);
         if (query != null) {
             query = query.replaceAll("/", "//")
                     .replaceAll("%", "/%")
                     .replaceAll("_", "/_");
         }
-        List<PlatformChannel> all = platformChannelMapper.queryForPlatformForWebList(platformId, query, channelType, online, hasShare);
+        List<PlatformChannel> all =
+                platformChannelMapper.queryForPlatformForWebListScoped(
+                        platformId,
+                        query,
+                        channelType,
+                        online,
+                        hasShare,
+                        scope);
         return new PageInfo<>(all);
+    }
+
+    @Override
+    public List<Integer> queryChannelIds(
+            Integer platformId, boolean shared) {
+        return platformChannelMapper.queryChannelIds(platformId, shared);
+    }
+
+    @Override
+    public Integer queryChannelIdByPlatformChannelId(
+            Integer platformId, int platformChannelId) {
+        return platformChannelMapper.queryChannelIdByPlatformChannelId(
+                platformId, platformChannelId);
     }
 
     /**

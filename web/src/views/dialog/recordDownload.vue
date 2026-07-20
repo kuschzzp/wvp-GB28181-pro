@@ -6,7 +6,7 @@
           <el-progress :percentage="percentage" style="height: 28px; line-height: 25px;"/>
         </div>
         <div>
-          <el-button v-if="downloadFile" icon="el-icon-download" size="mini" title="点击下载" @click="downloadFileClientEvent()">下载</el-button>
+          <el-button v-if="downloadTicket" icon="el-icon-download" size="mini" title="点击下载" @click="downloadFileClientEvent()">下载</el-button>
         </div>
       </div>
     </el-dialog>
@@ -16,6 +16,7 @@
 <script>
 
 import elDragDialog from '@/directive/el-drag-dialog'
+import { openDownloadTicket } from '@/utils/downloadTicket'
 
 export default {
   name: 'RecordDownload',
@@ -35,7 +36,7 @@ export default {
       taskId: null,
       getProgressRun: false,
       timer: null,
-      downloadFile: null
+      downloadTicket: null
     }
   },
   created() {
@@ -54,14 +55,14 @@ export default {
       this.showDialog = true
       this.getProgressRun = true
       this.percentage = 0.0
-      this.downloadFile = null
+      this.downloadTicket = null
       this.getProgressTimer()
     },
     getProgressTimer: function() {
       if (!this.getProgressRun) {
         return
       }
-      if (this.downloadFile) {
+      if (this.downloadTicket) {
         return
       }
       setTimeout(() => {
@@ -80,52 +81,14 @@ export default {
           } else {
             this.percentage = parseFloat((parseFloat(streamInfo.progress) * 100).toFixed(1))
           }
-          if (streamInfo.downLoadFilePath) {
-            if (location.protocol === 'https:') {
-              this.downloadFile = streamInfo.downLoadFilePath.httpsPath
-            } else {
-              this.downloadFile = streamInfo.downLoadFilePath.httpPath
-            }
+          if (streamInfo.downloadTicket) {
+            this.downloadTicket = streamInfo.downloadTicket
             this.percentage = 100
             this.getProgressRun = false
             this.downloadFileClientEvent()
           }
           if (callback)callback()
         })
-      //
-      // this.$axios({
-      //   method: 'get',
-      //   url: `/api/gb_record/download/progress/${this.deviceId}/${this.channelId}/${this.stream}`
-      // }).then((res) => {
-      //   if (res.data.code === 0) {
-      //     this.streamInfo = res.data.data
-      //     if (parseFloat(res.data.progress) === 1) {
-      //       this.percentage = 100
-      //     } else {
-      //       this.percentage = (parseFloat(res.data.data.progress) * 100).toFixed(1)
-      //     }
-      //     if (this.streamInfo.downLoadFilePath) {
-      //       if (location.protocol === 'https:') {
-      //         this.downloadFile = this.streamInfo.downLoadFilePath.httpsPath
-      //       } else {
-      //         this.downloadFile = this.streamInfo.downLoadFilePath.httpPath
-      //       }
-      //       this.percentage = 100
-      //       this.getProgressRun = false
-      //       this.downloadFileClientEvent()
-      //     }
-      //     if (callback)callback()
-      //   } else {
-      //     this.$message({
-      //       showClose: true,
-      //       message: res.data.msg,
-      //       type: 'error'
-      //     })
-      //     this.close()
-      //   }
-      // }).catch((e) => {
-      //   console.log(e)
-      // })
     },
     close: function() {
       if (this.streamInfo.progress < 1) {
@@ -154,19 +117,13 @@ export default {
       }
     },
     downloadFileClientEvent: function() {
-      // window.open(this.downloadFile )
-
-      const x = new XMLHttpRequest()
-      x.open('GET', this.downloadFile, true)
-      x.responseType = 'blob'
-      x.onload = (e) => {
-        const url = window.URL.createObjectURL(x.response)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = this.deviceId + '-' + this.channelId + '.mp4'
-        a.click()
-      }
-      x.send()
+      if (!this.downloadTicket) return
+      const ticket = this.downloadTicket
+      this.downloadTicket = null
+      openDownloadTicket({
+        ...ticket,
+        fileName: this.deviceId + '-' + this.channelId + '.mp4'
+      })
     }
   }
 }

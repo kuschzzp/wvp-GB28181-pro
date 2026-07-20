@@ -228,9 +228,12 @@ public class MediaServerServiceImpl implements IMediaServerService {
 
     @Override
     public void update(MediaServer mediaServer) {
-        if (mediaServerMapper.queryOne(mediaServer.getId()) != null) {
+        MediaServer existing = mediaServerMapper.queryOne(mediaServer.getId());
+        if (existing != null) {
+            preserveHookCredentialState(mediaServer, existing);
             mediaServerMapper.update(mediaServer);
         }else {
+            normalizeHookAuthenticationSettings(mediaServer);
             mediaServerMapper.add(mediaServer);
         }
 
@@ -376,6 +379,7 @@ public class MediaServerServiceImpl implements IMediaServerService {
             log.info("[添加媒体节点] 失败, mediaServer的类型：为空");
             return;
         }
+        normalizeHookAuthenticationSettings(mediaServer);
         if (mediaServerMapper.queryOne(mediaServer.getId()) != null) {
             log.info("[添加媒体节点] 失败, 媒体服务ID已存在，请修改媒体服务器配置, {}", mediaServer.getId());
             throw new ControllerException(ErrorCode.ERROR100.getCode(),"保存失败，媒体服务ID [ " + mediaServer.getId() + " ] 已存在，请修改媒体服务器配置");
@@ -389,6 +393,29 @@ public class MediaServerServiceImpl implements IMediaServerService {
         mediaServerMapper.add(mediaServer);
         if (mediaServer.isStatus()) {
             mediaNodeServerService.online(mediaServer);
+        }
+    }
+
+    private void preserveHookCredentialState(
+            MediaServer target,
+            MediaServer existing) {
+        target.setHookSecretHash(existing.getHookSecretHash());
+        target.setPreviousHookSecretHash(existing.getPreviousHookSecretHash());
+        target.setPreviousHookSecretExpiresAt(
+                existing.getPreviousHookSecretExpiresAt());
+        target.setHookSecretVersion(existing.getHookSecretVersion());
+        if (target.getHookAllowedCidrs() == null) {
+            target.setHookAllowedCidrs(existing.getHookAllowedCidrs());
+        }
+        if (target.getHookAuthEnabled() == null) {
+            target.setHookAuthEnabled(existing.getHookAuthEnabled());
+        }
+        normalizeHookAuthenticationSettings(target);
+    }
+
+    private void normalizeHookAuthenticationSettings(MediaServer mediaServer) {
+        if (mediaServer.getHookAuthEnabled() == null) {
+            mediaServer.setHookAuthEnabled(true);
         }
     }
 
@@ -720,7 +747,11 @@ public class MediaServerServiceImpl implements IMediaServerService {
     }
 
     @Override
-    public StreamInfo getStreamInfoByAppAndStreamWithCheck(String app, String stream, String mediaServerId, String addr, boolean authority) {
+    public StreamInfo getStreamInfoByAppAndStreamWithCheck(
+            String app,
+            String stream,
+            String mediaServerId,
+            String addr) {
         if (mediaServerId == null) {
             mediaServerId = mediaConfig.getId();
         }
@@ -748,8 +779,12 @@ public class MediaServerServiceImpl implements IMediaServerService {
 
 
     @Override
-    public StreamInfo getStreamInfoByAppAndStreamWithCheck(String app, String stream, String mediaServerId, boolean authority) {
-        return getStreamInfoByAppAndStreamWithCheck(app, stream, mediaServerId, null, authority);
+    public StreamInfo getStreamInfoByAppAndStreamWithCheck(
+            String app,
+            String stream,
+            String mediaServerId) {
+        return getStreamInfoByAppAndStreamWithCheck(
+                app, stream, mediaServerId, null);
     }
 
     @Override

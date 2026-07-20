@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.web.gb28181;
 
+import com.genersoft.iot.vmp.authorization.video.GbChannelAccessAuthorizer;
 import com.genersoft.iot.vmp.conf.exception.ControllerException;
 import com.genersoft.iot.vmp.gb28181.bean.Device;
 import com.genersoft.iot.vmp.gb28181.transmit.cmd.impl.SIPCommander;
@@ -8,6 +9,7 @@ import com.genersoft.iot.vmp.vmanager.bean.ErrorCode;
 import io.swagger.v3.oas.annotations.Hidden;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -24,7 +26,14 @@ import java.text.ParseException;
 @RestController
 @RequestMapping(value = "/api/v1/control")
 @Hidden
+@PreAuthorize("@authz.check('video:ptz:control')")
 public class ApiControlController {
+
+    private static final String PTZ_CONTROL_PERMISSION = "video:ptz:control";
+    private static final String PTZ_PRESET_PERMISSION = "video:ptz:preset";
+
+    @Autowired
+    private GbChannelAccessAuthorizer channelAccessAuthorizer;
 
     @Autowired
     private SIPCommander cmder;
@@ -41,10 +50,13 @@ public class ApiControlController {
      * @param speed 速度(0~255) 默认值: 129
      */
     @GetMapping(value = "/ptz")
-    private void ptz(String serial,String command,
+    public void ptz(String serial,String command,
                             @RequestParam(required = false)Integer channel,
                             @RequestParam(required = false)String code,
                             @RequestParam(required = false)Integer speed){
+
+        channelAccessAuthorizer.requireGbChannel(
+                PTZ_CONTROL_PERMISSION, serial, code);
 
         if (log.isDebugEnabled()) {
             log.debug("模拟接口> 设备云台控制 API调用，deviceId：{} ，channelId：{} ，command：{} ，speed：{} ",
@@ -115,12 +127,16 @@ public class ApiControlController {
      * @param preset 预置位编号(1~255)
      * @param name 预置位名称, command=set 时有效
      */
+    @PreAuthorize("@authz.check('video:ptz:preset')")
     @GetMapping(value = "/preset")
-    private void list(String serial,String command,
+    public void list(String serial,String command,
                             @RequestParam(required = false)Integer channel,
                             @RequestParam(required = false)String code,
                             @RequestParam(required = false)String name,
                             @RequestParam(required = false)Integer preset){
+
+        channelAccessAuthorizer.requireGbChannel(
+                PTZ_PRESET_PERMISSION, serial, code);
 
         if (log.isDebugEnabled()) {
             log.debug("模拟接口> 预置位控制 API调用，deviceId：{} ，channelId：{} ，command：{} ，name：{} ，preset：{} ",

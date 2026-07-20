@@ -46,7 +46,7 @@
 
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" :loading="queryLoading" icon="el-icon-search" @click="search()" >
+        <el-button v-hasPermi="['video:jt:list']" type="primary" :loading="queryLoading" icon="el-icon-search" @click="search()" >
           检索
         </el-button>
       </el-form-item>
@@ -67,6 +67,7 @@
       <el-table-column label="操作" fixed="right">
         <template v-slot:default="scope">
           <el-button
+            v-hasPermi="['video:jt:record']"
             size="medium"
             type="text"
             icon="el-icon-location-information"
@@ -198,6 +199,7 @@ export default {
       }
     },
     search: function() {
+      if (!this.$auth.hasPermi(['video:jt:list'])) return
       this.mediaDataInfoList = []
       this.queryLoading = true
       this.$store.dispatch('jtDevice/queryMediaData', {
@@ -225,6 +227,7 @@ export default {
       this.$refs.position.openDialog(row.positionBaseInfo)
     },
     download: function(row) {
+      if (!this.$auth.hasPermi(['video:jt:record'])) return
       this.$message.success('下载请求已发送', { closed: true })
       // 文件下载地址
       const baseUrl = window.baseUrl ? window.baseUrl : ''

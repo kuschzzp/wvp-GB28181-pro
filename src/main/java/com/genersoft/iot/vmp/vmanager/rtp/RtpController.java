@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.vmanager.rtp;
 
+import com.genersoft.iot.vmp.authorization.video.StreamResourceAccessAuthorizer;
 import com.genersoft.iot.vmp.common.VideoManagerConstants;
 import com.genersoft.iot.vmp.common.enums.MediaStreamUtil;
 import com.genersoft.iot.vmp.conf.DynamicTask;
@@ -28,6 +29,7 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.ObjectUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -41,7 +43,13 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 @RestController
 @RequestMapping("/api/rtp")
+@PreAuthorize("@authz.check('video:rtp:manage')")
 public class RtpController {
+
+    private static final String RTP_MANAGE_PERMISSION = "video:rtp:manage";
+
+    @Autowired
+    private StreamResourceAccessAuthorizer streamResourceAccessAuthorizer;
 
     @Autowired
     private ISendRtpServerService sendRtpServerService;
@@ -216,6 +224,8 @@ public class RtpController {
                         @RequestParam(required = false)Integer ptForAudio,
                         @RequestParam(required = false)Integer ptForVideo
         ) {
+        streamResourceAccessAuthorizer.requireAppStream(
+                RTP_MANAGE_PERMISSION, app, stream);
         log.info("[第三方服务对接->发送流] " +
                         "ssrc->{}, \r\n" +
                         "dstIpForAudio->{}, \n" +
@@ -324,6 +334,10 @@ public class RtpController {
         if (sendInfo == null){
             throw new ControllerException(ErrorCode.ERROR100.getCode(), "未开启发流");
         }
+        streamResourceAccessAuthorizer.requireAppStream(
+                RTP_MANAGE_PERMISSION,
+                sendInfo.getPushApp(),
+                sendInfo.getPushStream());
         MediaServer mediaServerItem = mediaServerService.getDefaultMediaServer();
         mediaServerService.stopSendRtp(mediaServerItem, sendInfo.getPushApp(), sendInfo.getPushStream(), sendInfo.getPushSSRC());
         log.info("[第三方服务对接->关闭发送流] 成功 callId->{}", callId);

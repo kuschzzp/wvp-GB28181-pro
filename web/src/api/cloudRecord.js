@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import { issueDownloadTicket } from '@/api/mediaAccess'
 
 // 云端录像API
 
@@ -9,6 +10,13 @@ export function getPlayPath(id) {
     params: {
       recordId: id
     }
+  })
+}
+
+export function getZipDownloadTicket(ids) {
+  return issueDownloadTicket({
+    resourceType: 'CLOUD_RECORD_ZIP',
+    resourceIds: ids
   })
 }
 
@@ -128,4 +136,3 @@ export function queryList(params) {
     }
   })
 }
-

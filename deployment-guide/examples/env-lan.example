@@ -1,0 +1,29 @@
+# Example only. Do not use until every REPLACE_WITH value is replaced.
+# Topology: server and all devices are in the same trusted LAN.
+# This example uses the HTTP-only lab mode from chapter 07: WebHttp must be 80
+# and docker/media/config.ini [http] sslport must be 0. Do not use this mode on
+# the public Internet. For TLS deployment, follow chapter 07 instead.
+
+MediaRtmp=10001
+MediaRtsp=10002
+MediaRtp=10003
+
+API_KEY_PEPPER=REPLACE_WITH_RANDOM_64_HEX_CHARS
+MEDIA_HOOK_SECRET_PEPPER=REPLACE_WITH_A_DIFFERENT_RANDOM_64_HEX_CHARS
+
+WebHttp=80
+# Reserved by the current project; HTTPS is not published by Compose.
+WebHttps=8081
+
+Stream_IP=192.168.10.20
+SDP_IP=192.168.10.20
+SIP_ShowIP=192.168.10.20
+
+SIP_Port=8160
+SIP_Domain=REPLACE_WITH_10_DIGIT_GB28181_DOMAIN
+SIP_Id=REPLACE_WITH_20_DIGIT_PLATFORM_ID
+SIP_Password=REPLACE_WITH_DEVICE_COMPATIBLE_RANDOM_PASSWORD
+
+# Keep recording off until storage sizing and retention are verified.
+RecordSip=false
+RecordPushLive=false

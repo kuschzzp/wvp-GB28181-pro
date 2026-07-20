@@ -1,6 +1,8 @@
 package com.genersoft.iot.vmp.gb28181.dao;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.gb28181.bean.*;
+import com.genersoft.iot.vmp.gb28181.dao.provider.ChannelProvider;
 import org.apache.ibatis.annotations.*;
 import org.springframework.stereotype.Repository;
 
@@ -156,6 +158,41 @@ public interface PlatformChannelMapper {
     List<PlatformChannel> queryForPlatformForWebList(@Param("platformId") Integer platformId, @Param("query") String query,
                                                      @Param("dataType") Integer dataType, @Param("online") Boolean online,
                                                      @Param("hasShare") Boolean hasShare);
+
+    @SelectProvider(type = ChannelProvider.class,
+            method = "queryForPlatformForWebList")
+    List<PlatformChannel> queryForPlatformForWebListScoped(
+            @Param("platformId") Integer platformId,
+            @Param("query") String query,
+            @Param("dataType") Integer dataType,
+            @Param("online") Boolean online,
+            @Param("hasShare") Boolean hasShare,
+            @Param("scope") VideoScopeQuery scope);
+
+    @Select("<script>" +
+            " select wdc.id" +
+            " from wvp_device_channel wdc" +
+            " left join wvp_platform_channel wpgc" +
+            " on wdc.id = wpgc.device_channel_id" +
+            " and wpgc.platform_id = #{platformId}" +
+            " where wdc.channel_type = 0" +
+            " <choose>" +
+            " <when test='shared'> and wpgc.id is not null </when>" +
+            " <otherwise> and wpgc.id is null </otherwise>" +
+            " </choose>" +
+            " order by wdc.id" +
+            "</script>")
+    List<Integer> queryChannelIds(
+            @Param("platformId") Integer platformId,
+            @Param("shared") boolean shared);
+
+    @Select("select device_channel_id" +
+            " from wvp_platform_channel" +
+            " where platform_id = #{platformId}" +
+            " and id = #{platformChannelId}")
+    Integer queryChannelIdByPlatformChannelId(
+            @Param("platformId") Integer platformId,
+            @Param("platformChannelId") int platformChannelId);
 
     @Select("select\n" +
             "    wdc.id as gb_id,\n" +

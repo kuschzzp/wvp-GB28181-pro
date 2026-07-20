@@ -25,8 +25,8 @@
         </el-select>
       </el-form-item>
       <el-form-item>
-        <el-button icon="el-icon-plus" size="mini" style="margin-right: 1rem;" type="primary" @click="add">新设备</el-button>
-        <el-button icon="el-icon-info" style="margin-right: 1rem;" @click="showInfo()">接入信息</el-button>
+        <el-button v-hasPermi="['video:jt:edit']" icon="el-icon-plus" size="mini" style="margin-right: 1rem;" type="primary" @click="add">新设备</el-button>
+        <el-button v-hasPermi="['operations:system:view']" icon="el-icon-info" style="margin-right: 1rem;" @click="showInfo()">接入信息</el-button>
       </el-form-item>
       <el-form-item style="float: right;">
         <el-button
@@ -88,6 +88,7 @@
         <template slot-scope="scope">
           <el-divider direction="vertical" />
           <el-button
+            v-hasPermi="['video:jt:list']"
             type="text"
             size="medium"
             icon="el-icon-video-camera"
@@ -95,9 +96,10 @@
           >通道
           </el-button>
           <el-divider direction="vertical" />
-          <el-button size="medium" icon="el-icon-edit" type="text" @click="edit(scope.row)">编辑</el-button>
+          <el-button v-hasPermi="['video:jt:edit']" size="medium" icon="el-icon-edit" type="text" @click="edit(scope.row)">编辑</el-button>
           <el-divider direction="vertical" />
           <el-button
+            v-hasPermi="['video:jt:edit']"
             size="medium"
             icon="el-icon-delete"
             type="text"
@@ -106,40 +108,43 @@
           >删除
           </el-button>
           <el-divider direction="vertical" />
-          <el-dropdown @command="(command)=>{moreClick(command, scope.row)}">
+          <el-dropdown
+            v-if="$auth.hasPermi(['video:jt:list', 'video:jt:control', 'video:jt:record'])"
+            @command="(command)=>{moreClick(command, scope.row)}"
+          >
             <el-button size="medium" type="text">
               更多功能<i class="el-icon-arrow-down el-icon--right" />
             </el-button>
             <el-dropdown-menu slot="dropdown">
-              <el-dropdown-item command="params" :disabled="!scope.row.status">
+              <el-dropdown-item v-if="$auth.hasPermi(['video:jt:control'])" command="params" :disabled="!scope.row.status">
                 终端参数</el-dropdown-item>
-              <el-dropdown-item command="attribute" v-bind:disabled="!scope.row.status">
+              <el-dropdown-item v-if="$auth.hasPermi(['video:jt:list'])" command="attribute" :disabled="!scope.row.status">
                 终端属性</el-dropdown-item>
-              <el-dropdown-item command="mediaAttribute" v-bind:disabled="!scope.row.status">
+              <el-dropdown-item v-if="$auth.hasPermi(['video:jt:list'])" command="mediaAttribute" :disabled="!scope.row.status">
                 音视频属性</el-dropdown-item>
-              <el-dropdown-item command="linkDetection" v-bind:disabled="!scope.row.status" >
+              <el-dropdown-item v-if="$auth.hasPermi(['video:jt:control'])" command="linkDetection" :disabled="!scope.row.status">
                 链路检测</el-dropdown-item>
-              <el-dropdown-item command="position" v-bind:disabled="!scope.row.status" >
+              <el-dropdown-item v-if="$auth.hasPermi(['video:jt:list'])" command="position" :disabled="!scope.row.status">
                 位置信息</el-dropdown-item>
-              <el-dropdown-item command="textMsg" v-bind:disabled="!scope.row.status" >
+              <el-dropdown-item v-if="$auth.hasPermi(['video:jt:control'])" command="textMsg" :disabled="!scope.row.status">
                 文本下发</el-dropdown-item>
-              <el-dropdown-item command="telephoneCallback" v-bind:disabled="!scope.row.status" >
+              <el-dropdown-item v-if="$auth.hasPermi(['video:jt:control'])" command="telephoneCallback" :disabled="!scope.row.status">
                 电话回拨</el-dropdown-item>
-              <el-dropdown-item command="setPhoneBook" v-bind:disabled="!scope.row.status" >
+              <el-dropdown-item v-if="$auth.hasPermi(['video:jt:control'])" command="setPhoneBook" :disabled="!scope.row.status">
                 设置电话本</el-dropdown-item>
-              <el-dropdown-item command="driverInfo" v-bind:disabled="!scope.row.status" >
+              <el-dropdown-item v-if="$auth.hasPermi(['video:jt:list'])" command="driverInfo" :disabled="!scope.row.status">
                 驾驶员信息</el-dropdown-item>
-              <el-dropdown-item command="reset" v-bind:disabled="!scope.row.status" >
+              <el-dropdown-item v-if="$auth.hasPermi(['video:jt:control'])" command="reset" :disabled="!scope.row.status">
                 终端复位</el-dropdown-item>
-              <el-dropdown-item command="factoryReset" v-bind:disabled="!scope.row.status" >
+              <el-dropdown-item v-if="$auth.hasPermi(['video:jt:control'])" command="factoryReset" :disabled="!scope.row.status">
                 恢复出厂</el-dropdown-item>
-              <el-dropdown-item command="connection" v-bind:disabled="!scope.row.status" >
+              <el-dropdown-item v-if="$auth.hasPermi(['video:jt:control'])" command="connection" :disabled="!scope.row.status">
                 连接指定服务器</el-dropdown-item>
-              <el-dropdown-item command="door" v-bind:disabled="!scope.row.status" >
+              <el-dropdown-item v-if="$auth.hasPermi(['video:jt:control'])" command="door" :disabled="!scope.row.status">
                 车门控制</el-dropdown-item>
-              <el-dropdown-item command="shooting" v-bind:disabled="!scope.row.status" >
+              <el-dropdown-item v-if="$auth.hasPermi(['video:jt:record'])" command="shooting" :disabled="!scope.row.status">
                 立即拍摄</el-dropdown-item>
-              <el-dropdown-item command="queryMediaList" v-bind:disabled="!scope.row.status" >
+              <el-dropdown-item v-if="$auth.hasPermi(['video:jt:list'])" command="queryMediaList" :disabled="!scope.row.status">
                 多媒体检索</el-dropdown-item>
             </el-dropdown-menu>
           </el-dropdown>
@@ -297,6 +302,24 @@ export default {
       })
     },
     moreClick: function(command, itemData) {
+      const permissions = {
+        params: 'video:jt:control',
+        attribute: 'video:jt:list',
+        mediaAttribute: 'video:jt:list',
+        linkDetection: 'video:jt:control',
+        position: 'video:jt:list',
+        textMsg: 'video:jt:control',
+        telephoneCallback: 'video:jt:control',
+        setPhoneBook: 'video:jt:control',
+        driverInfo: 'video:jt:list',
+        reset: 'video:jt:control',
+        factoryReset: 'video:jt:control',
+        connection: 'video:jt:control',
+        door: 'video:jt:control',
+        shooting: 'video:jt:record',
+        queryMediaList: 'video:jt:list'
+      }
+      if (!permissions[command] || !this.$auth.hasPermi([permissions[command]])) return
       if (command === 'params') {
         this.showParam(itemData)
       } else if (command === 'attribute') {

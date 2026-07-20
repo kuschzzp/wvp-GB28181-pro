@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
 import org.springframework.web.bind.annotation.*;
@@ -21,6 +22,7 @@ import java.util.List;
 @Tag(name = "区域管理")
 @RestController
 @RequestMapping("/api/region")
+@PreAuthorize("@authz.check('video:channel:list')")
 public class RegionController {
 
     private final static Logger logger = LoggerFactory.getLogger(RegionController.class);
@@ -31,6 +33,7 @@ public class RegionController {
     @Operation(summary = "添加区域")
     @Parameter(name = "region", description = "Region", required = true)
     @ResponseBody
+    @PreAuthorize("@authz.check('video:channel:edit')")
     @PostMapping("/add")
     public void add(@RequestBody Region region){
         regionService.add(region);
@@ -78,6 +81,7 @@ public class RegionController {
     @Operation(summary = "更新区域")
     @Parameter(name = "region", description = "Region", required = true)
     @ResponseBody
+    @PreAuthorize("@authz.check('video:channel:edit')")
     @PostMapping("/update")
     public void update(@RequestBody Region region){
         regionService.update(region);
@@ -86,6 +90,7 @@ public class RegionController {
     @Operation(summary = "删除区域")
     @Parameter(name = "id", description = "区域ID", required = true)
     @ResponseBody
+    @PreAuthorize("@authz.check('video:channel:edit')")
     @DeleteMapping("/delete")
     public void delete(Integer id){
         Assert.notNull(id, "区域ID需要存在");
@@ -129,6 +134,7 @@ public class RegionController {
 
     @Operation(summary = "从通道中同步行政区划")
     @ResponseBody
+    @PreAuthorize("@authz.check('video:channel:edit')")
     @GetMapping("/sync")
     public void sync(){
         regionService.syncFromChannel();
@@ -143,6 +149,7 @@ public class RegionController {
 
     @Operation(summary = "根据行政区划编号从文件中查询层级并添加")
     @ResponseBody
+    @PreAuthorize("@authz.check('video:channel:edit')")
     @GetMapping("/addByCivilCode")
     public void addByCivilCode(String civilCode){
         regionService.addByCivilCode(civilCode);

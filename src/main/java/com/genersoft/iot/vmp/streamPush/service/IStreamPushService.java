@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.streamPush.service;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.media.bean.MediaServer;
 import com.genersoft.iot.vmp.service.bean.StreamPushItemFromRedis;
 import com.genersoft.iot.vmp.streamPush.bean.StreamPush;
@@ -18,7 +19,13 @@ public interface IStreamPushService {
     /**
      * 获取
      */
-    PageInfo<StreamPush> getPushList(Integer page, Integer count, String query, Boolean pushing, String mediaServerId);
+    PageInfo<StreamPush> getPushList(
+            Integer page,
+            Integer count,
+            String query,
+            Boolean pushing,
+            String mediaServerId,
+            VideoScopeQuery scope);
 
     List<StreamPush> getPushList(String mediaSererId);
 
@@ -81,7 +88,7 @@ public interface IStreamPushService {
      * 获取统计信息
      * @return
      */
-    ResourceBaseInfo getOverview();
+    ResourceBaseInfo getOverview(VideoScopeQuery scope);
 
     Map<String, StreamPush> getAllAppAndStreamMap();
 

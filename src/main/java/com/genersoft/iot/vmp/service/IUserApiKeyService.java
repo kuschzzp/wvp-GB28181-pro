@@ -1,25 +1,44 @@
 package com.genersoft.iot.vmp.service;
 
-import com.genersoft.iot.vmp.storager.dao.dto.UserApiKey;
+import com.genersoft.iot.vmp.auth.apikey.ApiKeyStatus;
+import com.genersoft.iot.vmp.auth.apikey.dto.ApiKeyCreatedResponse;
+import com.genersoft.iot.vmp.auth.apikey.dto.ApiKeyQuery;
+import com.genersoft.iot.vmp.auth.apikey.dto.ApiKeySummary;
+import com.genersoft.iot.vmp.auth.apikey.dto.ApiKeyScopeCommand;
+import com.genersoft.iot.vmp.auth.apikey.dto.ApiKeyScopeOptions;
+import com.genersoft.iot.vmp.auth.apikey.dto.CreateApiKeyCommand;
+import com.genersoft.iot.vmp.auth.department.model.DepartmentScope;
 import com.github.pagehelper.PageInfo;
 
 public interface IUserApiKeyService {
-    int addApiKey(UserApiKey userApiKey);
 
-    boolean isApiKeyExists(String apiKey);
+    ApiKeyCreatedResponse create(
+            long ownerId,
+            CreateApiKeyCommand command,
+            DepartmentScope scope);
 
-    PageInfo<UserApiKey> getUserApiKeys(int page, int count, Integer userId);
+    ApiKeyCreatedResponse rotate(long ownerId, long keyId, DepartmentScope scope);
 
-    int enable(Integer id);
+    PageInfo<ApiKeySummary> pageOwnKeys(
+            long ownerId,
+            ApiKeyQuery query,
+            DepartmentScope scope);
 
-    int disable(Integer id);
+    ApiKeyScopeOptions scopeOptions(long ownerId, DepartmentScope scope);
 
-    int remark(Integer id, String remark);
+    void changeStatus(
+            long ownerId,
+            long keyId,
+            ApiKeyStatus status,
+            DepartmentScope scope);
 
-    int delete(Integer id);
+    void updateRemark(long ownerId, long keyId, String remark, DepartmentScope scope);
 
-    UserApiKey getUserApiKeyById(Integer id);
+    void updateScope(
+            long ownerId,
+            long keyId,
+            ApiKeyScopeCommand command,
+            DepartmentScope scope);
 
-    int reset(Integer id, String apiKey);
-
+    void delete(long ownerId, long keyId, DepartmentScope scope);
 }

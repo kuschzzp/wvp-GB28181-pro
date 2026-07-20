@@ -1,12 +1,16 @@
 package com.genersoft.iot.vmp.streamProxy.controller;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.genersoft.iot.vmp.authorization.AuthorizationFacade;
+import com.genersoft.iot.vmp.authorization.video.StreamResourceAccessAuthorizer;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceRef;
 import com.genersoft.iot.vmp.common.StreamInfo;
 import com.genersoft.iot.vmp.conf.UserSetting;
 import com.genersoft.iot.vmp.conf.exception.ControllerException;
 import com.genersoft.iot.vmp.conf.security.JwtUtils;
 import com.genersoft.iot.vmp.media.bean.MediaServer;
 import com.genersoft.iot.vmp.media.service.IMediaServerService;
+import com.genersoft.iot.vmp.media.security.PlayableStreamService;
 import com.genersoft.iot.vmp.service.bean.ErrorCallback;
 import com.genersoft.iot.vmp.service.bean.InviteErrorCode;
 import com.genersoft.iot.vmp.streamProxy.bean.StreamProxy;
@@ -23,6 +27,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
 import org.springframework.web.bind.annotation.*;
@@ -40,7 +45,14 @@ import java.util.Map;
 @RestController
 @Slf4j
 @RequestMapping(value = "/api/proxy")
+@PreAuthorize("@authz.check('video:proxy:list')")
 public class StreamProxyController {
+
+    private static final String PROXY_LIST_PERMISSION = "video:proxy:list";
+    private static final String PROXY_EDIT_PERMISSION = "video:proxy:edit";
+    private static final String PROXY_PLAY_PERMISSION = "video:proxy:play";
+    private static final String PROXY_STOP_PERMISSION = "video:proxy:stop";
+    private static final String PROXY_REMOVE_PERMISSION = "video:proxy:remove";
 
     @Autowired
     private IMediaServerService mediaServerService;
@@ -49,7 +61,16 @@ public class StreamProxyController {
     private IStreamProxyService streamProxyService;
 
     @Autowired
+    private AuthorizationFacade authorizationFacade;
+
+    @Autowired
+    private StreamResourceAccessAuthorizer streamResourceAccessAuthorizer;
+
+    @Autowired
     private IStreamProxyPlayService streamProxyPlayService;
+
+    @Autowired
+    private PlayableStreamService playableStreamService;
 
     @Autowired
     private UserSetting userSetting;
@@ -75,7 +96,13 @@ public class StreamProxyController {
         if (ObjectUtils.isEmpty(query)) {
             query = null;
         }
-        return streamProxyService.getAll(page, count, query, pulling, mediaServerId);
+        return streamProxyService.getAll(
+                page,
+                count,
+                query,
+                pulling,
+                mediaServerId,
+                authorizationFacade.resolveVideoScopeQuery(PROXY_LIST_PERMISSION));
     }
 
     @Operation(summary = "查询流代理", security = @SecurityRequirement(name = JwtUtils.HEADER))
@@ -84,13 +111,15 @@ public class StreamProxyController {
     @GetMapping(value = "/one")
     @ResponseBody
     public StreamProxy one(String app, String stream){
-
+        streamResourceAccessAuthorizer.requireProxy(
+                PROXY_LIST_PERMISSION, app, stream);
         return streamProxyService.getStreamProxyByAppAndStream(app, stream);
     }
 
     @Operation(summary = "新增代理", security = @SecurityRequirement(name = JwtUtils.HEADER), parameters = {
             @Parameter(name = "param", description = "代理参数", required = true),
     })
+    @PreAuthorize("@authz.check('video:proxy:add')")
     @PostMapping(value = "/add")
     @ResponseBody
     public StreamProxy add(@RequestBody StreamProxy param){
@@ -112,6 +141,7 @@ public class StreamProxyController {
     @Operation(summary = "更新代理", security = @SecurityRequirement(name = JwtUtils.HEADER), parameters = {
             @Parameter(name = "param", description = "代理参数", required = true),
     })
+    @PreAuthorize("@authz.check('video:proxy:edit')")
     @PostMapping(value = "/update")
     @ResponseBody
     public StreamProxy update(@RequestBody StreamProxy param){
@@ -119,6 +149,8 @@ public class StreamProxyController {
         if (param.getId() == 0) {
             throw new ControllerException(ErrorCode.ERROR400.getCode(), "缺少代理信息的ID");
         }
+        streamResourceAccessAuthorizer.requireProxyId(
+                PROXY_EDIT_PERMISSION, param.getId());
         if (ObjectUtils.isEmpty(param.getRelatesMediaServerId())) {
             param.setRelatesMediaServerId(null);
         }
@@ -143,6 +175,7 @@ public class StreamProxyController {
         return streamProxyService.getFFmpegCMDs(mediaServerItem);
     }
 
+    @PreAuthorize("@authz.check('video:proxy:remove')")
     @DeleteMapping(value = "/del")
     @ResponseBody
     @Operation(summary = "移除代理", security = @SecurityRequirement(name = JwtUtils.HEADER))
@@ -153,25 +186,33 @@ public class StreamProxyController {
         if (app == null || stream == null) {
             throw new ControllerException(ErrorCode.ERROR400.getCode(), app == null ?"app不能为null":"stream不能为null");
         }else {
+            streamResourceAccessAuthorizer.requireProxy(
+                    PROXY_REMOVE_PERMISSION, app, stream);
             streamProxyService.delteByAppAndStream(app, stream);
         }
     }
 
+    @PreAuthorize("@authz.check('video:proxy:remove')")
     @DeleteMapping(value = "/delete")
     @ResponseBody
     @Operation(summary = "移除代理", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "id", description = "代理ID", required = true)
     public void delte(int id){
         log.info("移除代理： {}", id);
+        streamResourceAccessAuthorizer.requireProxyId(
+                PROXY_REMOVE_PERMISSION, id);
         streamProxyService.delete(id);
     }
 
+    @PreAuthorize("@authz.check('video:proxy:play')")
     @GetMapping(value = "/start")
     @ResponseBody
     @Operation(summary = "播放代理", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "id", description = "代理Id", required = true)
     public DeferredResult<WVPResult<StreamContent>> start(HttpServletRequest request, int id){
         log.info("播放代理： {}", id);
+        VideoResourceRef playableResource = streamResourceAccessAuthorizer.requireProxyId(
+                PROXY_PLAY_PERMISSION, id);
         StreamProxy streamProxy = streamProxyService.getStreamProxy(id);
         Assert.notNull(streamProxy, "代理信息不存在");
 
@@ -196,7 +237,8 @@ public class StreamProxyController {
                             && !"null".equalsIgnoreCase(streamInfo.getMediaServer().getTranscodeSuffix())) {
                         streamInfo.setStream(streamInfo.getStream() + "_" + streamInfo.getMediaServer().getTranscodeSuffix());
                     }
-                    wvpResult.setData(new StreamContent(streamInfo));
+                    wvpResult.setData(playableStreamService.publish(
+                            streamInfo, playableResource));
                 }else {
                     wvpResult.setCode(code);
                     wvpResult.setMsg(msg);
@@ -212,12 +254,15 @@ public class StreamProxyController {
         return result;
     }
 
+    @PreAuthorize("@authz.check('video:proxy:stop')")
     @GetMapping(value = "/stop")
     @ResponseBody
     @Operation(summary = "停止播放", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "id", description = "代理Id", required = true)
     public void stop(int id){
         log.info("停止播放： {}", id);
+        streamResourceAccessAuthorizer.requireProxyId(
+                PROXY_STOP_PERMISSION, id);
         streamProxyPlayService.stop(id);
     }
 }

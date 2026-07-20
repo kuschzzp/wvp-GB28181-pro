@@ -2,6 +2,9 @@ package com.genersoft.iot.vmp.gb28181.controller;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.genersoft.iot.vmp.authorization.video.GbChannelAccessAuthorizer;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceRef;
+import com.genersoft.iot.vmp.authorization.video.resolver.VideoResourceNotFoundException;
 import com.genersoft.iot.vmp.common.InviteSessionType;
 import com.genersoft.iot.vmp.common.StreamInfo;
 import com.genersoft.iot.vmp.conf.UserSetting;
@@ -19,6 +22,7 @@ import com.genersoft.iot.vmp.gb28181.transmit.callback.DeferredResultHolder;
 import com.genersoft.iot.vmp.gb28181.transmit.callback.RequestMessage;
 import com.genersoft.iot.vmp.media.bean.MediaServer;
 import com.genersoft.iot.vmp.media.service.IMediaServerService;
+import com.genersoft.iot.vmp.media.security.PlayableStreamService;
 import com.genersoft.iot.vmp.service.bean.ErrorCallback;
 import com.genersoft.iot.vmp.service.bean.InviteErrorCode;
 import com.genersoft.iot.vmp.utils.DateUtil;
@@ -32,6 +36,8 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
 import org.springframework.web.bind.annotation.*;
@@ -51,7 +57,19 @@ import java.util.UUID;
 @Slf4j
 @RestController
 @RequestMapping("/api/play")
+@PreAuthorize("@authz.check('video:channel:play')")
 public class PlayController {
+
+	private static final String CHANNEL_PLAY_PERMISSION = "video:channel:play";
+	private static final String CHANNEL_STOP_PERMISSION = "video:channel:stop";
+	private static final String CHANNEL_BROADCAST_PERMISSION =
+			"video:channel:broadcast";
+
+	@Autowired
+	private GbChannelAccessAuthorizer channelAccessAuthorizer;
+
+	@Autowired
+	private PlayableStreamService playableStreamService;
 
 	@Autowired
 	private SipInviteSessionManager sessionManager;
@@ -87,6 +105,8 @@ public class PlayController {
 		log.info("[开始点播] deviceId：{}, channelId：{}, ", deviceId, channelId);
 		Assert.notNull(deviceId, "设备国标编号不可为NULL");
 		Assert.notNull(channelId, "通道国标编号不可为NULL");
+		VideoResourceRef playableResource = channelAccessAuthorizer.requireGbChannel(
+				CHANNEL_PLAY_PERMISSION, deviceId, channelId);
 		// 获取可用的zlm
 		Device device = deviceService.getDeviceByDeviceId(deviceId);
 		Assert.notNull(device, "设备不存在");
@@ -128,7 +148,8 @@ public class PlayController {
 					if (!ObjectUtils.isEmpty(streamInfo.getMediaServer().getTranscodeSuffix()) && !"null".equalsIgnoreCase(streamInfo.getMediaServer().getTranscodeSuffix())) {
 						streamInfo.setStream(streamInfo.getStream() + "_" + streamInfo.getMediaServer().getTranscodeSuffix());
 					}
-					wvpResult.setData(new StreamContent(streamInfo));
+					wvpResult.setData(playableStreamService.publish(
+							streamInfo, playableResource));
 				}else {
 					wvpResult.setCode(code);
 					wvpResult.setMsg(msg);
@@ -146,6 +167,7 @@ public class PlayController {
 	@Operation(summary = "停止点播", security = @SecurityRequirement(name = JwtUtils.HEADER))
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
 	@Parameter(name = "channelId", description = "通道国标编号", required = true)
+	@PreAuthorize("@authz.check('video:channel:stop')")
 	@GetMapping("/stop/{deviceId}/{channelId}")
 	public JSONObject playStop(@PathVariable String deviceId, @PathVariable String channelId) {
 
@@ -154,6 +176,8 @@ public class PlayController {
 		if (deviceId == null || channelId == null) {
 			throw new ControllerException(ErrorCode.ERROR400);
 		}
+		channelAccessAuthorizer.requireGbChannel(
+				CHANNEL_STOP_PERMISSION, deviceId, channelId);
 
 		Device device = deviceService.getDeviceByDeviceId(deviceId);
 		DeviceChannel channel = deviceChannelService.getOneForSource(deviceId, channelId);
@@ -172,6 +196,7 @@ public class PlayController {
 	@Operation(summary = "结束转码", security = @SecurityRequirement(name = JwtUtils.HEADER))
 	@Parameter(name = "key", description = "视频流key", required = true)
 	@Parameter(name = "mediaServerId", description = "流媒体服务ID", required = true)
+	@PreAuthorize("@authz.check('video:channel:stop')")
 	@PostMapping("/convertStop/{key}")
 	public void playConvertStop(@PathVariable String key, String mediaServerId) {
 		if (mediaServerId == null) {
@@ -193,8 +218,11 @@ public class PlayController {
 	@Parameter(name = "deviceId", description = "通道国标编号", required = true)
 	@Parameter(name = "timeout", description = "推流超时时间(秒)", required = true)
 	@GetMapping("/broadcast/{deviceId}/{channelId}")
+	@PreAuthorize("@authz.check('video:channel:broadcast')")
 	@PostMapping("/broadcast/{deviceId}/{channelId}")
     public AudioBroadcastResult broadcastApi(@PathVariable String deviceId, @PathVariable String channelId, Integer timeout, Boolean broadcastMode) {
+		channelAccessAuthorizer.requireGbChannel(
+				CHANNEL_BROADCAST_PERMISSION, deviceId, channelId);
 		if (log.isDebugEnabled()) {
 			log.debug("语音广播API调用");
 		}
@@ -207,8 +235,11 @@ public class PlayController {
 	@Parameter(name = "deviceId", description = "设备Id", required = true)
 	@Parameter(name = "channelId", description = "通道Id", required = true)
 	@GetMapping("/broadcast/stop/{deviceId}/{channelId}")
+	@PreAuthorize("@authz.check('video:channel:broadcast')")
 	@PostMapping("/broadcast/stop/{deviceId}/{channelId}")
 	public void stopBroadcast(@PathVariable String deviceId, @PathVariable String channelId) {
+		channelAccessAuthorizer.requireGbChannel(
+				CHANNEL_BROADCAST_PERMISSION, deviceId, channelId);
 		if (log.isDebugEnabled()) {
 			log.debug("停止语音广播API调用");
 		}
@@ -228,6 +259,15 @@ public class PlayController {
 		JSONArray objects = new JSONArray();
 		List<SsrcTransaction> allSsrc = sessionManager.getAll();
 		for (SsrcTransaction transaction : allSsrc) {
+			if (transaction.getChannelId() == null) {
+				continue;
+			}
+			try {
+				channelAccessAuthorizer.requireChannel(
+						CHANNEL_PLAY_PERMISSION, transaction.getChannelId());
+			} catch (AccessDeniedException | VideoResourceNotFoundException ignored) {
+				continue;
+			}
 			JSONObject jsonObject = new JSONObject();
 			jsonObject.put("deviceId", transaction.getDeviceId());
 			jsonObject.put("channelId", transaction.getChannelId());
@@ -250,6 +290,8 @@ public class PlayController {
 		if (log.isDebugEnabled()) {
 			log.debug("获取截图: {}/{}", deviceId, channelId);
 		}
+		channelAccessAuthorizer.requireGbChannel(
+				CHANNEL_PLAY_PERMISSION, deviceId, channelId);
 
 		DeferredResult<String> result = new DeferredResult<>(3 * 1000L);
 		String key  = DeferredResultHolder.CALLBACK_CMD_SNAP + deviceId;
@@ -273,4 +315,3 @@ public class PlayController {
 	}
 
 }
-

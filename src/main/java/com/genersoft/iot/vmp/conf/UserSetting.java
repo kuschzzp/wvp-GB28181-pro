@@ -54,8 +54,9 @@ public class UserSetting {
     private Boolean interfaceAuthentication = Boolean.TRUE;
 
     /**
-     * 接口鉴权例外的接口, 即不进行接口鉴权的接口,尽量详细书写，尽量不用/**，至少两级目录
+     * 旧版鉴权排除配置，仅保留一个兼容周期用于配置绑定，不再参与安全链放行。
      */
+    @Deprecated(forRemoval = true)
     private List<String> interfaceAuthenticationExcludes = new ArrayList<>();
 
     /**
@@ -134,9 +135,9 @@ public class UserSetting {
     private Boolean ssrcRandom = Boolean.FALSE;
 
     /**
-     * 开启接口文档页面。 默认开启，生产环境建议关闭，遇到swagger相关的漏洞时也可以关闭
+     * 开启接口文档页面。安全默认关闭，需要时由部署配置显式开启。
      */
-    private Boolean docEnable = Boolean.TRUE;
+    private Boolean docEnable = Boolean.FALSE;
 
     /**
      * 服务ID，不写则为000000
@@ -155,7 +156,7 @@ public class UserSetting {
     private String civilCodeFile = "classpath:civilCode.csv";
 
     /**
-     * 跨域配置，不配置此项则允许所有跨域请求，配置后则只允许配置的页面的地址请求， 可以配置多个
+     * 跨域来源白名单。安全默认不允许跨域，需要前后端分离部署时显式配置页面来源。
      */
     private List<String> allowedOrigins = new ArrayList<>();
 
@@ -187,7 +188,7 @@ public class UserSetting {
     private long loginTimeout = 60;
 
     /**
-     * jwk文件路径，若不指定则使用resources目录下的jwk.json
+     * JWK 私钥文件路径；未指定时使用并持久化到 config/jwk.json。
      */
     private String jwkFile = null;
 

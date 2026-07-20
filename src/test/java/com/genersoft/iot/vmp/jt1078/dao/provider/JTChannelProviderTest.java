@@ -16,7 +16,7 @@ class JTChannelProviderTest {
         Map<String, Object> params = new HashMap<>();
         params.put("terminalDbId", 1);
         params.put("query", "test-channel");
-        String sql = provider.selectAll(params);
+        String sql = provider.selectAllForInternalMaintenance(params);
         assertTrue(sql.contains("#{query}"), "should use #{query} bind variable");
         assertFalse(sql.contains("test-channel"), "should not contain raw query value");
         assertTrue(sql.contains("concat('%',#{query},'%')"), "should use concat with bind variable");
@@ -27,7 +27,7 @@ class JTChannelProviderTest {
     void selectAll_withoutQuery_shouldNotContainLike() {
         Map<String, Object> params = new HashMap<>();
         params.put("terminalDbId", 1);
-        String sql = provider.selectAll(params);
+        String sql = provider.selectAllForInternalMaintenance(params);
         assertFalse(sql.contains("LIKE"), "should not contain LIKE clause when no query");
         assertTrue(sql.contains("#{terminalDbId}"), "should still have terminalDbId condition");
     }
@@ -54,7 +54,7 @@ class JTChannelProviderTest {
     void selectAll_shouldOrderByChannelId() {
         Map<String, Object> params = new HashMap<>();
         params.put("terminalDbId", 1);
-        String sql = provider.selectAll(params);
+        String sql = provider.selectAllForInternalMaintenance(params);
         assertTrue(sql.contains("ORDER BY jc.channel_id"), "should order by channel_id");
     }
 

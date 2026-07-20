@@ -61,21 +61,22 @@ export default {
   },
   methods: {
     openDialog: function (channel, callback) {
-      console.log(channel)
       this.showDialog = true
       this.callback = callback
       this.channel = channel
     },
 
     onSubmit: function () {
-      console.log('onSubmit')
       this.isLoging = true
-      let url = `/api/position/history/${this.channel.deviceId}?start=${this.searchFrom}&end=${this.searchTo}`
-      if (this.channel.channelId) {
-        url+='&channelId=${this.channel.channelId}'
+      const params = {
+        start: this.searchFrom,
+        end: this.searchTo
       }
-      this.$axios.get(url, {
-      }).then((res) => {
+      if (this.channel.channelId != null) {
+        params.channelId = this.channel.channelId
+      }
+      const url = `/api/position/history/${encodeURIComponent(this.channel.deviceId)}`
+      return this.$axios.get(url, { params }).then((res) => {
         this.isLoging = false
         if (typeof this.callback === 'function') {
           if (res.data.code == 0) {
@@ -89,10 +90,10 @@ export default {
           }
 
         }
-      }).catch(function (error) {
-          this.isLoging = false
-          console.error(error)
-        })
+      }).catch((error) => {
+        this.isLoging = false
+        console.error(error)
+      })
     },
     close: function () {
       this.showDialog = false

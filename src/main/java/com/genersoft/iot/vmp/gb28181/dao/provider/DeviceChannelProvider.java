@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.gb28181.dao.provider;
 
+import com.genersoft.iot.vmp.authorization.video.VideoListScopeSql;
 import com.genersoft.iot.vmp.common.enums.ChannelDataType;
 import org.springframework.util.ObjectUtils;
 
@@ -112,8 +113,88 @@ public class DeviceChannelProvider {
             }
             sqlBuild.append(" )");
         }
+        VideoListScopeSql.appendChannelScope(sqlBuild, params, "dc");
         sqlBuild.append(" ORDER BY d.device_id, dc.device_id");
-        return sqlBuild.toString();
+        return VideoListScopeSql.asScript(sqlBuild.toString());
+    }
+
+    public String queryChannelsWithDeviceInfo(Map<String, Object> params) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT dc.id,
+                       dc.create_time,
+                       dc.update_time,
+                       dc.sub_count,
+                       coalesce(dc.gb_device_id, dc.device_id) as channel_id,
+                       de.device_id as device_id,
+                       coalesce(dc.gb_name, dc.name) as name,
+                       coalesce(de.custom_name, de.name) as device_name,
+                       de.on_line as device_online,
+                       coalesce(dc.gb_manufacturer, dc.manufacturer) as manufacture,
+                       coalesce(dc.gb_model, dc.model) as model,
+                       coalesce(dc.gb_owner, dc.owner) as owner,
+                       coalesce(dc.gb_civil_code, dc.civil_code) as civil_code,
+                       coalesce(dc.gb_block, dc.block) as block,
+                       coalesce(dc.gb_address, dc.address) as address,
+                       coalesce(dc.gb_parental, dc.parental) as parental,
+                       coalesce(dc.gb_parent_id, dc.parent_id) as parent_id,
+                       coalesce(dc.gb_safety_way, dc.safety_way) as safety_way,
+                       coalesce(dc.gb_register_way, dc.register_way) as register_way,
+                       coalesce(dc.gb_cert_num, dc.cert_num) as cert_num,
+                       coalesce(dc.gb_certifiable, dc.certifiable) as certifiable,
+                       coalesce(dc.gb_err_code, dc.err_code) as err_code,
+                       coalesce(dc.gb_end_time, dc.end_time) as end_time,
+                       coalesce(dc.gb_secrecy, dc.secrecy) as secrecy,
+                       coalesce(dc.gb_ip_address, dc.ip_address) as ip_address,
+                       coalesce(dc.gb_port, dc.port) as port,
+                       coalesce(dc.gb_password, dc.password) as password,
+                       coalesce(dc.gb_ptz_type, dc.ptz_type) as ptz_type,
+                       coalesce(dc.gb_status, dc.status) as status,
+                       coalesce(dc.gb_longitude, dc.longitude) as longitude,
+                       coalesce(dc.gb_latitude, dc.latitude) as latitude,
+                       coalesce(dc.gb_business_group_id, dc.business_group_id)
+                           as business_group_id
+                  from wvp_device_channel dc
+                  left join wvp_device de on dc.data_device_id = de.id
+                 where dc.data_type = 1
+                """);
+        if (params.get("deviceId") != null) {
+            sql.append(" AND de.device_id = #{deviceId} ");
+        }
+        if (params.get("query") != null && !ObjectUtils.isEmpty(params.get("query"))) {
+            sql.append("""
+                     AND (coalesce(dc.gb_device_id, dc.device_id)
+                              LIKE concat('%',#{query},'%') escape '/'
+                          OR coalesce(dc.gb_name, dc.name)
+                              LIKE concat('%',#{query},'%') escape '/')
+                    """);
+        }
+        if (params.get("parentChannelId") != null) {
+            sql.append(" AND coalesce(dc.gb_parent_id, dc.parent_id)=#{parentChannelId} ");
+        }
+        if (Boolean.TRUE.equals(params.get("online"))) {
+            sql.append(" AND coalesce(dc.gb_status, dc.status)='ON' ");
+        } else if (Boolean.FALSE.equals(params.get("online"))) {
+            sql.append(" AND coalesce(dc.gb_status, dc.status)='OFF' ");
+        }
+        if (Boolean.TRUE.equals(params.get("hasSubChannel"))) {
+            sql.append(" AND dc.sub_count > 0 ");
+        } else if (Boolean.FALSE.equals(params.get("hasSubChannel"))) {
+            sql.append(" AND dc.sub_count = 0 ");
+        }
+        List<String> channelIds = (List<String>) params.get("channelIds");
+        if (channelIds != null && !channelIds.isEmpty()) {
+            sql.append(" AND coalesce(dc.gb_device_id, dc.device_id) in (");
+            for (int i = 0; i < channelIds.size(); i++) {
+                if (i > 0) {
+                    sql.append(",");
+                }
+                sql.append("#{channelIds[").append(i).append("]}");
+            }
+            sql.append(") ");
+        }
+        VideoListScopeSql.appendChannelScope(sql, params, "dc");
+        sql.append(" ORDER BY coalesce(dc.gb_device_id, dc.device_id) ASC ");
+        return VideoListScopeSql.asScript(sql.toString());
     }
 
 

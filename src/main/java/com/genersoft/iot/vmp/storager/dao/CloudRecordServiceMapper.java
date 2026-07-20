@@ -1,7 +1,9 @@
 package com.genersoft.iot.vmp.storager.dao;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.media.bean.MediaServer;
 import com.genersoft.iot.vmp.service.bean.CloudRecordItem;
+import com.genersoft.iot.vmp.storager.dao.provider.CloudRecordProvider;
 import org.apache.ibatis.annotations.*;
 
 import java.util.Collection;
@@ -23,6 +25,9 @@ public interface CloudRecordServiceMapper {
             " file_path," +
             " file_size," +
             " server_id," +
+            " source_type," +
+            " source_id," +
+            " channel_id," +
             " time_len ) " +
             "VALUES (" +
             " #{app}," +
@@ -36,51 +41,59 @@ public interface CloudRecordServiceMapper {
             " #{filePath}," +
             " #{fileSize}," +
             " #{serverId}," +
+            " #{sourceType}," +
+            " #{sourceId}," +
+            " #{channelId}," +
             " #{timeLen})" +
             " </script>")
     int add(CloudRecordItem cloudRecordItem);
 
-    @Select(" <script>" +
-            "select * " +
-            " from wvp_cloud_record " +
-            " where 1 = 1" +
-            " <if test='query != null'> AND (app LIKE concat('%',#{query},'%') escape '/' OR stream LIKE concat('%',#{query},'%') escape '/' )</if> " +
-            " <if test= 'app != null '> and app=#{app}</if>" +
-            " <if test= 'stream != null '> and stream=#{stream}</if>" +
-            " <if test= 'startTimeStamp != null '> and end_time &gt;= #{startTimeStamp}</if>" +
-            " <if test= 'endTimeStamp != null '> and start_time &lt;= #{endTimeStamp}</if>" +
-            " <if test= 'callId != null '> and call_id = #{callId}</if>" +
-            " <if test= 'mediaServerItemList != null  ' > and media_server_id in " +
-            " <foreach collection='mediaServerItemList'  item='item'  open='(' separator=',' close=')' > #{item.id}</foreach>" +
-            " </if>" +
-            " <if test= 'ids != null  ' > and id in " +
-            " <foreach collection='ids'  item='item'  open='(' separator=',' close=')' > #{item}</foreach>" +
-            " </if>" +
-            " <if test= 'ascOrder != null and ascOrder == true'> order by start_time asc</if>" +
-            " <if test= 'ascOrder == null or ascOrder == false'> order by start_time desc</if>" +
-            " </script>")
-    List<CloudRecordItem> getList(@Param("query") String query, @Param("app") String app, @Param("stream") String stream,
-                                  @Param("startTimeStamp")Long startTimeStamp, @Param("endTimeStamp")Long endTimeStamp,
-                                  @Param("callId")String callId, List<MediaServer> mediaServerItemList,
-                                  List<Integer> ids, @Param("ascOrder") Boolean ascOrder);
+    @SelectProvider(type = CloudRecordProvider.class, method = "getList")
+    List<CloudRecordItem> getList(
+            @Param("query") String query,
+            @Param("app") String app,
+            @Param("stream") String stream,
+            @Param("startTimeStamp") Long startTimeStamp,
+            @Param("endTimeStamp") Long endTimeStamp,
+            @Param("callId") String callId,
+            @Param("mediaServerItemList") List<MediaServer> mediaServerItemList,
+            @Param("ids") List<Integer> ids,
+            @Param("ascOrder") Boolean ascOrder,
+            @Param("scope") VideoScopeQuery scope);
+
+    @SelectProvider(
+            type = CloudRecordProvider.class,
+            method = "getListForInternalMaintenance")
+    List<CloudRecordItem> getListForInternalMaintenance(
+            @Param("query") String query,
+            @Param("app") String app,
+            @Param("stream") String stream,
+            @Param("startTimeStamp") Long startTimeStamp,
+            @Param("endTimeStamp") Long endTimeStamp,
+            @Param("callId") String callId,
+            @Param("mediaServerItemList") List<MediaServer> mediaServerItemList,
+            @Param("ids") List<Integer> ids,
+            @Param("ascOrder") Boolean ascOrder);
 
 
-    @Select(" <script>" +
-            "select file_path" +
-            " from wvp_cloud_record " +
-            " where 0 = 0" +
-            " <if test= 'app != null '> and app=#{app}</if>" +
-            " <if test= 'stream != null '> and stream=#{stream}</if>" +
-            " <if test= 'startTimeStamp != null '> and end_time &gt;= #{startTimeStamp}</if>" +
-            " <if test= 'endTimeStamp != null '> and start_time &lt;= #{endTimeStamp}</if>" +
-            " <if test= 'callId != null '> and call_id = #{callId}</if>" +
-            " <if test= 'mediaServerItemList != null  ' > and media_server_id in " +
-            " <foreach collection='mediaServerItemList'  item='item'  open='(' separator=',' close=')' > #{item.id}</foreach>" +
-            " </if>" +
-            " </script>")
-    List<String> queryRecordFilePathList(@Param("app") String app, @Param("stream") String stream,
-                                  @Param("startTimeStamp")Long startTimeStamp, @Param("endTimeStamp")Long endTimeStamp,
-                                  @Param("callId")String callId, List<MediaServer> mediaServerItemList);
+    @SelectProvider(type = CloudRecordProvider.class, method = "queryRecordFilePathList")
+    List<String> queryRecordFilePathList(
+            @Param("app") String app,
+            @Param("stream") String stream,
+            @Param("startTimeStamp") Long startTimeStamp,
+            @Param("endTimeStamp") Long endTimeStamp,
+            @Param("callId") String callId,
+            @Param("mediaServerItemList") List<MediaServer> mediaServerItemList,
+            @Param("scope") VideoScopeQuery scope);
+
+    @SelectProvider(
+            type = CloudRecordProvider.class,
+            method = "countAuthorizedTaskSources")
+    int countAuthorizedTaskSources(
+            @Param("app") String app,
+            @Param("stream") String stream,
+            @Param("callId") String callId,
+            @Param("scope") VideoScopeQuery scope);
 
     @Update(" <script>" +
             "update wvp_cloud_record set collect = #{collect} where file_path in " +
@@ -169,4 +182,89 @@ public interface CloudRecordServiceMapper {
             " <if test= 'callId != null '> and call_id=#{callId}</if>" +
             " </script>")
     List<CloudRecordItem> queryRecordByAppStreamAndCallId(String app, String stream, String callId);
+
+    @Select("""
+            select id,
+                   app,
+                   stream,
+                   call_id as callId,
+                   source_type as sourceType,
+                   source_id as sourceId,
+                   channel_id as channelId,
+                   source_reason as sourceReason
+              from wvp_cloud_record
+             where source_type = 'LEGACY_UNBOUND'
+               and source_id is null
+               and channel_id is null
+               and source_reason is null
+             order by id
+             limit #{limit}
+            """)
+    List<CloudRecordItem> findLegacyUnbound(@Param("limit") int limit);
+
+    @Select("""
+            select id as recordId,
+                   source_type as sourceType,
+                   source_id as sourceId,
+                   channel_id as channelId
+              from wvp_cloud_record
+             where call_id = #{callId}
+               and source_type &lt;&gt; 'LEGACY_UNBOUND'
+               and source_id is not null
+               and channel_id is not null
+            """)
+    List<com.genersoft.iot.vmp.authorization.video.resolver.CloudRecordSource>
+            findBoundSourcesByCallId(@Param("callId") String callId);
+
+    @Select("""
+            select id as recordId,
+                   source_type as sourceType,
+                   source_id as sourceId,
+                   channel_id as channelId
+              from wvp_cloud_record
+             where app = #{app}
+               and stream = #{stream}
+               and source_type &lt;&gt; 'LEGACY_UNBOUND'
+               and source_id is not null
+               and channel_id is not null
+            """)
+    List<com.genersoft.iot.vmp.authorization.video.resolver.CloudRecordSource>
+            findBoundSourcesByAppStream(
+                    @Param("app") String app,
+                    @Param("stream") String stream);
+
+    @Update("""
+            update wvp_cloud_record
+               set source_type = #{sourceType},
+                   source_id = #{sourceId},
+                   channel_id = #{channelId},
+                   source_reason = #{reasonCode}
+             where id = #{recordId}
+               and source_type = 'LEGACY_UNBOUND'
+               and source_id is null
+               and channel_id is null
+               and source_reason is null
+            """)
+    int bindLegacyRecord(
+            @Param("recordId") int recordId,
+            @Param("sourceType") String sourceType,
+            @Param("sourceId") long sourceId,
+            @Param("channelId") long channelId,
+            @Param("reasonCode") String reasonCode);
+
+    @Update("""
+            update wvp_cloud_record
+               set source_type = 'LEGACY_UNBOUND',
+                   source_id = null,
+                   channel_id = null,
+                   source_reason = #{reasonCode}
+             where id = #{recordId}
+               and source_type = 'LEGACY_UNBOUND'
+               and source_id is null
+               and channel_id is null
+               and source_reason is null
+            """)
+    int markLegacyUnbound(
+            @Param("recordId") int recordId,
+            @Param("reasonCode") String reasonCode);
 }

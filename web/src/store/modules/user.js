@@ -1,10 +1,9 @@
-import crypto from 'crypto'
 import {
   add,
   changePassword,
   changePasswordForAdmin,
   changePushKey,
-  getUserInfo,
+  getProfile,
   login,
   logout,
   queryList,
@@ -26,6 +25,11 @@ const getDefaultState = () => {
     token: getToken(),
     name: '',
     serverId: '',
+    user: null,
+    roles: [],
+    permissions: [],
+    authzVersion: 0,
+    systemUser: false,
     showConfirmBoxForLoginLose: true
   }
 }
@@ -45,6 +49,14 @@ const mutations = {
   SET_SERVER_ID: (state, serverId) => {
     state.serverId = serverId
   },
+  SET_PROFILE: (state, profile) => {
+    state.user = profile.user
+    state.name = profile.user.nickname || profile.user.username
+    state.roles = Array.isArray(profile.roles) ? profile.roles : []
+    state.permissions = Array.isArray(profile.permissions) ? profile.permissions : []
+    state.authzVersion = profile.authzVersion
+    state.systemUser = Boolean(profile.systemUser)
+  },
   SET_CONFIRM_BOX: (state, status) => {
     state.showConfirmBoxForLoginLose = status
   }
@@ -57,15 +69,15 @@ const actions = {
     return new Promise((resolve, reject) => {
       login({
         username: username.trim(),
-        password: crypto.createHash('md5').update(password, 'utf8').digest('hex')
+        password
       }).then(response => {
         const { data } = response
         commit('SET_TOKEN', data.accessToken)
-        commit('SET_NAME', data.username)
+        commit('SET_NAME', username.trim())
         commit('SET_SERVER_ID', data.serverId)
         commit('SET_CONFIRM_BOX', true)
         setToken(data.accessToken)
-        setName(data.username)
+        setName(username.trim())
         setServerId(data.serverId)
         resolve()
       }).catch(error => {
@@ -74,15 +86,18 @@ const actions = {
     })
   },
   // user logout
-  logout({ commit, state }) {
+  logout({ commit, dispatch }) {
     return new Promise((resolve, reject) => {
-      logout(state.token).then(() => {
+      logout().then(() => {
         removeToken()
         removeServerId()
         removeName()
         resetRouter()
         commit('RESET_STATE')
-        resolve()
+        Promise.all([
+          dispatch('permission/resetRoutes', null, { root: true }),
+          dispatch('tagsView/delAllViews', null, { root: true })
+        ]).then(resolve).catch(reject)
       }).catch(error => {
         reject(error)
       })
@@ -90,26 +105,38 @@ const actions = {
   },
 
   // remove token
-  resetToken({ commit }) {
-    return new Promise(resolve => {
-      removeToken() // must remove  token  first
-      commit('RESET_STATE')
-      resolve()
-    })
-  },
-
-  getUserInfo({ commit }) {
+  resetToken({ commit, dispatch }) {
     return new Promise((resolve, reject) => {
-      getUserInfo().then(response => {
-        const { data } = response
-        resolve(data)
-      }).catch(error => {
-        reject(error)
-      })
+      removeToken() // must remove  token  first
+      removeServerId()
+      removeName()
+      resetRouter()
+      commit('RESET_STATE')
+      Promise.all([
+        dispatch('permission/resetRoutes', null, { root: true }),
+        dispatch('tagsView/delAllViews', null, { root: true })
+      ]).then(resolve).catch(reject)
     })
   },
 
-  changePushKey({ commit }, params) {
+  getInfo({ commit }) {
+    return new Promise((resolve, reject) => {
+      getProfile().then(response => {
+        const profile = response && Object.prototype.hasOwnProperty.call(response, 'data')
+          ? response.data
+          : response
+        if (!profile || !profile.user) {
+          reject(new Error('用户权限信息格式错误'))
+          return
+        }
+        commit('SET_PROFILE', profile)
+        setName(profile.user.username)
+        resolve(profile)
+      }).catch(reject)
+    })
+  },
+
+  changePushKey(context, params) {
     return new Promise((resolve, reject) => {
       changePushKey(params).then(response => {
         const { data } = response
@@ -120,7 +147,7 @@ const actions = {
     })
   },
 
-  queryList({ commit }, params) {
+  queryList(context, params) {
     return new Promise((resolve, reject) => {
       queryList(params).then(response => {
         const { data } = response
@@ -131,7 +158,7 @@ const actions = {
     })
   },
 
-  removeById({ commit }, id) {
+  removeById(context, id) {
     return new Promise((resolve, reject) => {
       removeById(id).then(response => {
         const { data } = response
@@ -142,7 +169,7 @@ const actions = {
     })
   },
 
-  add({ commit }, params) {
+  add(context, params) {
     return new Promise((resolve, reject) => {
       add(params).then(response => {
         const { data } = response
@@ -153,7 +180,7 @@ const actions = {
     })
   },
 
-  changePassword({ commit }, params) {
+  changePassword(context, params) {
     return new Promise((resolve, reject) => {
       changePassword(params).then(response => {
         const { data } = response
@@ -164,7 +191,7 @@ const actions = {
     })
   },
 
-  changePasswordForAdmin({ commit }, params) {
+  changePasswordForAdmin(context, params) {
     return new Promise((resolve, reject) => {
       changePasswordForAdmin(params).then(response => {
         const { data } = response
@@ -185,4 +212,3 @@ export default {
   mutations,
   actions
 }
-

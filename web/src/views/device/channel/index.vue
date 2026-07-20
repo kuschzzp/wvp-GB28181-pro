@@ -47,6 +47,7 @@
             style="width: 16rem; margin-right: 1rem;"
             placeholder="请选择码流类型"
             default-first-option
+            :disabled="!$auth.hasPermi(['video:channel:edit'])"
             @change="subStreamChange"
           >
             <el-option label="stream:0(主码流)" value="stream:0" />
@@ -75,17 +76,14 @@
         <el-table-column prop="deviceId" label="编号" min-width="180" />
         <el-table-column label="快照" min-width="100">
           <template v-slot:default="scope">
-            <el-image
-              :src="getSnap(scope.row)"
-              :preview-src-list="getBigSnap(scope.row)"
-              :fit="'contain'"
-              style="width: 60px"
-              @error="getSnapErrorEvent(scope.row.deviceId, scope.row.channelId)"
-            >
-              <div slot="error" class="image-slot">
-                <i class="el-icon-picture-outline" />
-              </div>
-            </el-image>
+            <secured-image
+              source-type="gb"
+              :device-id="deviceId"
+              :channel-id="scope.row.deviceId"
+              fit="contain"
+              width="60px"
+              height="45px"
+            />
           </template>
         </el-table-column>
         <!--          <el-table-column prop="subCount" label="子节点数" min-width="100">-->
@@ -104,7 +102,12 @@
         </el-table-column>
         <el-table-column label="开启音频" min-width="100">
           <template v-slot:default="scope">
-            <el-switch v-model="scope.row.hasAudio" active-color="#409EFF" @change="updateChannel(scope.row)" />
+            <el-switch
+              v-model="scope.row.hasAudio"
+              active-color="#409EFF"
+              :disabled="!$auth.hasPermi(['video:channel:edit'])"
+              @change="updateChannel(scope.row)"
+            />
           </template>
         </el-table-column>
         <el-table-column label="码流类型" min-width="180">
@@ -115,6 +118,7 @@
               style="margin-right: 1rem;"
               placeholder="请选择码流类型"
               default-first-option
+              :disabled="!$auth.hasPermi(['video:channel:edit'])"
               @change="channelSubStreamChange(scope.row)"
             >
               <el-option label="stream:0(主码流)" value="stream:0" />
@@ -139,6 +143,7 @@
         <el-table-column label="操作" min-width="340" fixed="right">
           <template v-slot:default="scope">
             <el-button
+              v-hasPermi="['video:channel:play']"
               size="medium"
               :disabled="device == null || device.online === 0"
               icon="el-icon-video-play"
@@ -149,6 +154,7 @@
             </el-button>
             <el-button
               v-if="!!scope.row.streamId"
+              v-hasPermi="['video:channel:stop']"
               size="medium"
               :disabled="device == null || device.online === 0"
               icon="el-icon-switch-button"
@@ -159,6 +165,7 @@
             </el-button>
             <el-divider direction="vertical" />
             <el-button
+              v-hasPermi="['video:channel:edit']"
               size="medium"
               type="text"
               icon="el-icon-edit"
@@ -176,20 +183,43 @@
             >查看
             </el-button>
             <el-divider v-if="scope.row.subCount > 0 || scope.row.parental === 1 || scope.row.deviceId.length <= 8" direction="vertical" />
-            <el-dropdown @command="(command)=>{moreClick(command, scope.row)}">
+            <el-dropdown
+              v-if="$auth.hasPermi(['video:channel:talk', 'video:record:list', 'video:ptz:control', 'video:ptz:preset', 'video:ptz:cruise', 'video:device:config', 'video:cloud-record:list'])"
+              @command="(command)=>{moreClick(command, scope.row)}"
+            >
               <el-button size="medium" type="text">
                 更多<i class="el-icon-arrow-down el-icon--right" />
               </el-button>
               <el-dropdown-menu>
-                <el-dropdown-item command="audioTalk" :disabled="device == null || device.online === 0">
+                <el-dropdown-item
+                  v-if="$auth.hasPermi(['video:channel:talk'])"
+                  command="audioTalk"
+                  :disabled="device == null || device.online === 0"
+                >
                   语音对讲</el-dropdown-item>
-                <el-dropdown-item command="records" :disabled="device == null || device.online === 0">
+                <el-dropdown-item
+                  v-if="$auth.hasPermi(['video:record:list'])"
+                  command="records"
+                  :disabled="device == null || device.online === 0"
+                >
                   设备录像</el-dropdown-item>
-                <el-dropdown-item command="ptzConfig" :disabled="device == null || device.online === 0">
+                <el-dropdown-item
+                  v-if="$auth.hasPermi(['video:ptz:control', 'video:ptz:preset', 'video:ptz:cruise'])"
+                  command="ptzConfig"
+                  :disabled="device == null || device.online === 0"
+                >
                   云台配置</el-dropdown-item>
-                <el-dropdown-item command="cameraConfig" :disabled="device == null || device.online === 0">
+                <el-dropdown-item
+                  v-if="$auth.hasPermi(['video:device:config'])"
+                  command="cameraConfig"
+                  :disabled="device == null || device.online === 0"
+                >
                   相机配置</el-dropdown-item>
-                <el-dropdown-item command="cloudRecords" :disabled="device == null || device.online === 0">
+                <el-dropdown-item
+                  v-if="$auth.hasPermi(['video:cloud-record:list'])"
+                  command="cloudRecords"
+                  :disabled="device == null || device.online === 0"
+                >
                   云端录像</el-dropdown-item>
               </el-dropdown-menu>
 
@@ -224,6 +254,7 @@ import audioTalk from '../dialog/audioTalk.vue'
 import Edit from './edit.vue'
 import ptzConfig from '@/views/device/channel/ptzConfig.vue'
 import cameraConfig from './cameraConfig.vue'
+import SecuredImage from '@/components/SecuredImage'
 
 export default {
   name: 'ChannelList',
@@ -232,7 +263,8 @@ export default {
     audioTalk,
     ChannelEdit: Edit,
     ptzConfig,
-    cameraConfig
+    cameraConfig,
+    SecuredImage
   },
   props: {
     defaultPage: {
@@ -272,7 +304,6 @@ export default {
       ptzConfigDeviceId: null,
       ptzConfigChannelDeviceId: null,
       cameraConfigDeviceId: null,
-      loadSnap: {},
       ptzTypes: {
         0: '未知',
         1: '球机',
@@ -354,17 +385,13 @@ export default {
 
     // 通知设备上传媒体流
     sendDevicePush: function(itemData) {
+      if (!this.$auth.hasPermi(['video:channel:play'])) return
       const deviceId = this.deviceId
       const channelId = itemData.deviceId
       itemData.playLoading = true
       console.log('通知设备推流1：' + deviceId + ' : ' + channelId)
       this.$store.dispatch('play/play', [deviceId, channelId])
         .then((data) => {
-          setTimeout(() => {
-            const snapId = deviceId + '_' + channelId
-            this.loadSnap[deviceId + channelId] = 0
-            this.getSnapErrorEvent(snapId)
-          }, 5000)
           itemData.streamId = data.stream
           this.$refs.devicePlayer.openDialog('media', deviceId, channelId, {
             streamInfo: data,
@@ -390,6 +417,15 @@ export default {
       this.ptzConfigChannelDeviceId = null
     },
     moreClick: function(command, itemData) {
+      const permissions = {
+        records: 'video:record:list',
+        cloudRecords: 'video:cloud-record:list',
+        ptzConfig: ['video:ptz:control', 'video:ptz:preset', 'video:ptz:cruise'],
+        audioTalk: 'video:channel:talk',
+        cameraConfig: 'video:device:config'
+      }
+      const requiredPermissions = Array.isArray(permissions[command]) ? permissions[command] : [permissions[command]]
+      if (!permissions[command] || !this.$auth.hasPermi(requiredPermissions)) return
       if (command === 'records') {
         this.queryRecords(itemData)
       } else if (command === 'cloudRecords') {
@@ -417,6 +453,7 @@ export default {
       this.$router.push(`/cloudRecord/detail/rtp/${deviceId}_${channelId}`)
     },
     stopDevicePush: function(itemData) {
+      if (!this.$auth.hasPermi(['video:channel:stop'])) return
       this.$store.dispatch('play/stop', {
         deviceId: this.deviceId,
         channelId: itemData.deviceId
@@ -429,27 +466,6 @@ export default {
           console.log(error)
         }
       })
-    },
-    getSnap: function(row) {
-      const baseUrl = window.baseUrl ? window.baseUrl : ''
-      return ((process.env.NODE_ENV === 'development') ? process.env.VUE_APP_BASE_API : baseUrl) + '/api/device/query/snap/' + this.deviceId + '/' + row.deviceId
-    },
-    getBigSnap: function(row) {
-      return [this.getSnap(row)]
-    },
-    getSnapErrorEvent: function(deviceId, channelId) {
-      if (typeof (this.loadSnap[deviceId + channelId]) !== 'undefined') {
-        console.log('下载截图' + this.loadSnap[deviceId + channelId])
-        if (this.loadSnap[deviceId + channelId] > 5) {
-          delete this.loadSnap[deviceId + channelId]
-          return
-        }
-        setTimeout(() => {
-          const url = (process.env.NODE_ENV === 'development' ? 'debug' : '') + '/api/device/query/snap/' + deviceId + '/' + channelId
-          this.loadSnap[deviceId + channelId]++
-          document.getElementById(deviceId + channelId).setAttribute('src', url + '?' + new Date().getTime())
-        }, 1000)
-      }
     },
     showDevice: function() {
       // this.$router.push(this.beforeUrl).then(() => {
@@ -500,12 +516,14 @@ export default {
       this.initData()
     },
     updateChannel: function(row) {
+      if (!this.$auth.hasPermi(['video:channel:edit'])) return
       this.$store.dispatch('device/changeChannelAudio', {
         channelId: row.id,
         audio: row.hasAudio
       })
     },
     subStreamChange: function() {
+      if (!this.$auth.hasPermi(['video:channel:edit'])) return
       this.$confirm('确定重置所有通道的码流类型?', '提示', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
@@ -526,6 +544,7 @@ export default {
       })
     },
     channelSubStreamChange: function(row) {
+      if (!this.$auth.hasPermi(['video:channel:edit'])) return
       this.$store.dispatch('device/updateChannelStreamIdentification', {
         deviceDbId: row.deviceDbId,
         id: row.id,

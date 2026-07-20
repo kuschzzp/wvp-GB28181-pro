@@ -2,6 +2,7 @@ package com.genersoft.iot.vmp.web.custom.service;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.conf.DynamicTask;
 import com.genersoft.iot.vmp.conf.UserSetting;
 import com.genersoft.iot.vmp.conf.exception.ControllerException;
@@ -374,7 +375,13 @@ public class CameraChannelService implements CommandLineRunner {
     }
 
 
-    public PageInfo<CameraChannel> queryList(Integer page, Integer count, String groupAlias, Boolean status, String geoCoordSys) {
+    public PageInfo<CameraChannel> queryList(
+            Integer page,
+            Integer count,
+            String groupAlias,
+            Boolean status,
+            String geoCoordSys,
+            VideoScopeQuery scope) {
         // 构建组织结构信息
         Group group = groupMapper.queryGroupByAlias(groupAlias);
         if (group == null) {
@@ -387,14 +394,24 @@ public class CameraChannelService implements CommandLineRunner {
         // 构建分页
         PageHelper.startPage(page, count);
 
-        List<CameraChannel> all = channelMapper.queryListForSy(groupDeviceId, status);
+        List<CameraChannel> all = channelMapper.queryListForSy(
+                groupDeviceId, status, scope);
         PageInfo<CameraChannel> groupPageInfo = new PageInfo<>(all);
         List<CameraChannel> list = addIconPathAndPositionForCameraChannelList(groupPageInfo.getList(), geoCoordSys);
         groupPageInfo.setList(list);
         return groupPageInfo;
     }
 
-    public PageInfo<CameraChannel> queryListWithChild(Integer page, Integer count, String query, String sortName, Boolean order, String groupAlias, Boolean status, String geoCoordSys) {
+    public PageInfo<CameraChannel> queryListWithChild(
+            Integer page,
+            Integer count,
+            String query,
+            String sortName,
+            Boolean order,
+            String groupAlias,
+            Boolean status,
+            String geoCoordSys,
+            VideoScopeQuery scope) {
 
         List<CameraGroup> groupList = null;
         // 构建组织结构信息
@@ -419,7 +436,8 @@ public class CameraChannelService implements CommandLineRunner {
         if (order == null) {
             order = true;
         }
-        List<CameraChannel> all = channelMapper.queryListWithChildForSy(query, sortName, order, groupList, status);
+        List<CameraChannel> all = channelMapper.queryListWithChildForSy(
+                query, sortName, order, groupList, status, scope);
         PageInfo<CameraChannel> groupPageInfo = new PageInfo<>(all);
         List<CameraChannel> list = addIconPathAndPositionForCameraChannelList(groupPageInfo.getList(), geoCoordSys);
         groupPageInfo.setList(list);
@@ -440,7 +458,9 @@ public class CameraChannelService implements CommandLineRunner {
         }
     }
 
-    public List<CameraCount> queryCountWithChild(String groupAlias) {
+    public List<CameraCount> queryCountWithChild(
+            String groupAlias,
+            VideoScopeQuery scope) {
         // 构建组织结构信息
         CameraGroup group = groupMapper.queryGroupByAlias(groupAlias);
         if (group == null) {
@@ -452,7 +472,8 @@ public class CameraChannelService implements CommandLineRunner {
         groupList.add(group);
 
         // TODO 此处整理可优化，尽量让sql直接返回对应的结构 无需二次整理
-        List<CameraCount> cameraCounts = groupMapper.queryCountWithChild(groupList);
+        List<CameraCount> cameraCounts =
+                channelMapper.queryCountWithChildForSy(groupList, scope);
         if (cameraCounts.isEmpty()) {
             return Collections.emptyList();
         }else {
@@ -527,7 +548,7 @@ public class CameraChannelService implements CommandLineRunner {
 
     public CameraChannel queryOne(String deviceId, String deviceCode, String geoCoordSys) {
         List<CameraChannel> cameraChannels = channelMapper.queryGbChannelByChannelDeviceIdAndGbDeviceId(deviceId, deviceCode);
-        Assert.isTrue(cameraChannels.isEmpty(), "通道不存在");
+        Assert.isTrue(!cameraChannels.isEmpty(), "通道不存在");
         List<CameraChannel> channels = addIconPathAndPositionForCameraChannelList(cameraChannels, geoCoordSys);
         CameraChannel channel = channels.get(0);
         if (deviceCode != null) {
@@ -545,7 +566,7 @@ public class CameraChannelService implements CommandLineRunner {
      */
     public void play(String deviceId, String deviceCode, ErrorCallback<CameraStreamInfo> callback) {
         List<CameraChannel> cameraChannels = channelMapper.queryGbChannelByChannelDeviceIdAndGbDeviceId(deviceId, deviceCode);
-        Assert.isTrue(cameraChannels.isEmpty(), "通道不存在");
+        Assert.isTrue(!cameraChannels.isEmpty(), "通道不存在");
         CameraChannel channel = cameraChannels.get(0);
         channelPlayService.play(channel, null, userSetting.getRecordSip(), (code, msg, data) -> {
             callback.run(code, msg, new CameraStreamInfo(channel, data));
@@ -559,14 +580,14 @@ public class CameraChannelService implements CommandLineRunner {
      */
     public void stopPlay(String deviceId, String deviceCode) {
         List<CameraChannel> cameraChannels = channelMapper.queryGbChannelByChannelDeviceIdAndGbDeviceId(deviceId, deviceCode);
-        Assert.isTrue(cameraChannels.isEmpty(), "通道不存在");
+        Assert.isTrue(!cameraChannels.isEmpty(), "通道不存在");
         CameraChannel channel = cameraChannels.get(0);
         channelPlayService.stopPlay(channel);
     }
 
     public void ptz(String deviceId, String deviceCode, String command, Integer speed, ErrorCallback<String> callback) {
         List<CameraChannel> cameraChannels = channelMapper.queryGbChannelByChannelDeviceIdAndGbDeviceId(deviceId, deviceCode);
-        Assert.isTrue(cameraChannels.isEmpty(), "通道不存在");
+        Assert.isTrue(!cameraChannels.isEmpty(), "通道不存在");
         CameraChannel channel = cameraChannels.get(0);
 
         if (speed == null) {
@@ -623,7 +644,7 @@ public class CameraChannelService implements CommandLineRunner {
 
     public void updateCamera(String deviceId, String deviceCode, String name, Double longitude, Double latitude, String geoCoordSys) {
         List<CameraChannel> cameraChannels = channelMapper.queryGbChannelByChannelDeviceIdAndGbDeviceId(deviceId, deviceCode);
-        Assert.isTrue(cameraChannels.isEmpty(), "通道不存在");
+        Assert.isTrue(!cameraChannels.isEmpty(), "通道不存在");
         CameraChannel commonGBChannel = cameraChannels.get(0);
         commonGBChannel.setGbName(name);
         if (geoCoordSys != null && longitude != null && latitude != null
@@ -648,18 +669,36 @@ public class CameraChannelService implements CommandLineRunner {
         channelMapper.update(commonGBChannel);
     }
 
-    public List<CameraChannel> queryListByDeviceIds(List<String> deviceIds, String geoCoordSys) {
-        List<CameraChannel> cameraChannels = channelMapper.queryListByDeviceIds(deviceIds);
+    public List<CameraChannel> queryListByDeviceIds(
+            List<String> deviceIds,
+            String geoCoordSys,
+            VideoScopeQuery scope) {
+        List<CameraChannel> cameraChannels =
+                channelMapper.queryListByDeviceIds(deviceIds, scope);
         return addIconPathAndPositionForCameraChannelList(cameraChannels, geoCoordSys);
     }
 
-    public List<CameraChannel> queryListByAddressAndDirectionType(String address, Integer directionType, String geoCoordSys) {
-        List<CameraChannel> cameraChannels = channelMapper.queryListByAddressAndDirectionType(address, directionType);
+    public List<CameraChannel> queryListByAddressAndDirectionType(
+            String address,
+            Integer directionType,
+            String geoCoordSys,
+            VideoScopeQuery scope) {
+        List<CameraChannel> cameraChannels =
+                channelMapper.queryListByAddressAndDirectionType(
+                        address, directionType, scope);
         return addIconPathAndPositionForCameraChannelList(cameraChannels, geoCoordSys);
     }
 
 
-    public List<CameraChannel> queryListInBox(Double minLongitude, Double maxLongitude, Double minLatitude, Double maxLatitude, Integer level, String groupAlias, String geoCoordSys) {
+    public List<CameraChannel> queryListInBox(
+            Double minLongitude,
+            Double maxLongitude,
+            Double minLatitude,
+            Double maxLatitude,
+            Integer level,
+            String groupAlias,
+            String geoCoordSys,
+            VideoScopeQuery scope) {
         // 构建组织结构信息
         CameraGroup group = groupMapper.queryGroupByAlias(groupAlias);
         if (group == null) {
@@ -692,11 +731,25 @@ public class CameraChannelService implements CommandLineRunner {
             }
         }
 
-        List<CameraChannel> all = channelMapper.queryListInBox(minLongitude, maxLongitude, minLatitude, maxLatitude, level, groupList);
+        List<CameraChannel> all = channelMapper.queryListInBox(
+                minLongitude,
+                maxLongitude,
+                minLatitude,
+                maxLatitude,
+                level,
+                groupList,
+                scope);
         return addIconPathAndPositionForCameraChannelList(all, geoCoordSys);
     }
 
-    public List<CameraChannel> queryListInCircle(Double centerLongitude, Double centerLatitude, Double radius, Integer level, String groupAlias, String geoCoordSys) {
+    public List<CameraChannel> queryListInCircle(
+            Double centerLongitude,
+            Double centerLatitude,
+            Double radius,
+            Integer level,
+            String groupAlias,
+            String geoCoordSys,
+            VideoScopeQuery scope) {
         // 构建组织结构信息
         CameraGroup group = groupMapper.queryGroupByAlias(groupAlias);
         if (group == null) {
@@ -722,11 +775,22 @@ public class CameraChannelService implements CommandLineRunner {
             }
         }
 
-        List<CameraChannel> all = channelMapper.queryListInCircle(centerLongitude, centerLatitude, radius, level, groupList);
+        List<CameraChannel> all = channelMapper.queryListInCircle(
+                centerLongitude,
+                centerLatitude,
+                radius,
+                level,
+                groupList,
+                scope);
         return addIconPathAndPositionForCameraChannelList(all, geoCoordSys);
     }
 
-    public List<CameraChannel> queryListInPolygon(List<Point> pointList, String groupAlias, Integer level, String geoCoordSys) {
+    public List<CameraChannel> queryListInPolygon(
+            List<Point> pointList,
+            String groupAlias,
+            Integer level,
+            String geoCoordSys,
+            VideoScopeQuery scope) {
         // 构建组织结构信息
         CameraGroup group = groupMapper.queryGroupByAlias(groupAlias);
         if (group == null) {
@@ -753,11 +817,16 @@ public class CameraChannelService implements CommandLineRunner {
             }
         }
 
-        List<CameraChannel> all = channelMapper.queryListInPolygon(pointList, level, groupList);
+        List<CameraChannel> all = channelMapper.queryListInPolygon(
+                pointList, level, groupList, scope);
         return addIconPathAndPositionForCameraChannelList(all, geoCoordSys);
     }
 
-    public PageInfo<CameraChannel> queryListForMobile(Integer page, Integer count, String topGroupAlias) {
+    public PageInfo<CameraChannel> queryListForMobile(
+            Integer page,
+            Integer count,
+            String topGroupAlias,
+            VideoScopeQuery scope) {
 
         CameraGroup cameraGroup = groupMapper.queryGroupByAlias(topGroupAlias);
 
@@ -767,7 +836,8 @@ public class CameraChannelService implements CommandLineRunner {
         }
         // 构建分页
         PageHelper.startPage(page, count);
-        List<CameraChannel> all = channelMapper.queryListForSyMobile(business);
+        List<CameraChannel> all =
+                channelMapper.queryListForSyMobile(business, scope);
 
         PageInfo<CameraChannel> groupPageInfo = new PageInfo<>(all);
         List<CameraChannel> list = addIconPathAndPositionForCameraChannelList(groupPageInfo.getList(), null);
@@ -776,12 +846,14 @@ public class CameraChannelService implements CommandLineRunner {
     }
 
 
-    public List<CameraChannel> queryMeetingChannelList(String topGroupAlias) {
+    public List<CameraChannel> queryMeetingChannelList(
+            String topGroupAlias,
+            VideoScopeQuery scope) {
         CameraGroup cameraGroup = groupMapper.queryGroupByAlias(topGroupAlias);
         Assert.notNull(cameraGroup, "域不存在");
         String business = cameraGroup.getDeviceId();
         Assert.notNull(business, "域不存在");
 
-        return channelMapper.queryMeetingChannelList(business);
+        return channelMapper.queryMeetingChannelList(business, scope);
     }
 }

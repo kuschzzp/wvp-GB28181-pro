@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.jt1078.codec.netty;
 
+import com.genersoft.iot.vmp.auth.internal.InternalInvocationGuard;
 import com.genersoft.iot.vmp.jt1078.codec.decode.Jt808Decoder;
 import com.genersoft.iot.vmp.jt1078.codec.encode.Jt808Encoder;
 import com.genersoft.iot.vmp.jt1078.codec.encode.Jt808EncoderCmd;
@@ -40,14 +41,21 @@ public class TcpServer {
     private ApplicationEventPublisher applicationEventPublisher = null;
     private Ijt1078Service service = null;
     private final JT1078Config jt1078Config;
+    private final InternalInvocationGuard internalInvocationGuard;
 
     private final ByteBuf DECODER_JT808 = Unpooled.wrappedBuffer(new byte[]{0x7e});
 
-    public TcpServer(Integer port, ApplicationEventPublisher applicationEventPublisher, Ijt1078Service service, JT1078Config jt1078Config) {
+    public TcpServer(
+            Integer port,
+            ApplicationEventPublisher applicationEventPublisher,
+            Ijt1078Service service,
+            JT1078Config jt1078Config,
+            InternalInvocationGuard internalInvocationGuard) {
         this.port = port;
         this.applicationEventPublisher = applicationEventPublisher;
         this.service = service;
         this.jt1078Config = jt1078Config;
+        this.internalInvocationGuard = internalInvocationGuard;
     }
 
     private void startTcpServer() {
@@ -68,7 +76,10 @@ public class TcpServer {
                             channel.pipeline()
                                     .addLast(new IdleStateHandler(jt1078Config.getReaderIdleTime(), 0, 0, TimeUnit.MINUTES))
                                     .addLast(new DelimiterBasedFrameDecoder(1024 * 2, DECODER_JT808))
-                                    .addLast(new Jt808Decoder(applicationEventPublisher, service))
+                                    .addLast(new Jt808Decoder(
+                                            applicationEventPublisher,
+                                            service,
+                                            internalInvocationGuard))
                                     .addLast(new Jt808Encoder())
                                     .addLast(new Jt808EncoderCmd())
                                     .addLast(new Jt808Handler(applicationEventPublisher));

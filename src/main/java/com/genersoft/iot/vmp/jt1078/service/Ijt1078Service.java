@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.jt1078.service;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.common.CommonCallback;
 import com.genersoft.iot.vmp.jt1078.bean.*;
 import com.genersoft.iot.vmp.vmanager.bean.WVPResult;
@@ -19,7 +20,12 @@ public interface Ijt1078Service {
 
     void updateDevice(JTDevice deviceInDb);
 
-    PageInfo<JTDevice> getDeviceList(int page, int count, String query, Boolean online);
+    PageInfo<JTDevice> getDeviceList(
+            int page,
+            int count,
+            String query,
+            Boolean online,
+            VideoScopeQuery scope);
 
     void addDevice(JTDevice device);
 
@@ -104,7 +110,12 @@ public interface Ijt1078Service {
 
     void recordDownload(String phoneNumber, Integer channelId, String startTime, String endTime, Integer alarmSign, Integer mediaType, Integer streamType, Integer storageType, OutputStream outputStream, CommonCallback<WVPResult<String>> fileCallback);
 
-    PageInfo<JTChannel> getChannelList(int page, int count, int deviceId, String query);
+    PageInfo<JTChannel> getChannelList(
+            int page,
+            int count,
+            int deviceId,
+            String query,
+            VideoScopeQuery scope);
 
     void updateChannel(JTChannel channel);
 
@@ -119,6 +130,8 @@ public interface Ijt1078Service {
     JTChannel getChannelByDbId(Integer id);
 
     String getRecordTempUrl(String phoneNumber, Integer channelId, String startTime, String endTime, Integer alarmSign, Integer mediaType, Integer streamType, Integer storageType);
+
+    JTRecordDownloadCatch getRecordDownload(String downloadId);
 
     void recordDownload(String filePath, ServletOutputStream outputStream);
 

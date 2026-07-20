@@ -8,6 +8,8 @@ import com.genersoft.iot.vmp.gb28181.event.EventPublisher;
 import com.genersoft.iot.vmp.media.bean.MediaServer;
 import com.genersoft.iot.vmp.media.event.mediaServer.MediaServerChangeEvent;
 import com.genersoft.iot.vmp.media.event.mediaServer.MediaServerDeleteEvent;
+import com.genersoft.iot.vmp.media.security.MediaHookAuthenticationFilter;
+import com.genersoft.iot.vmp.media.security.MediaHookCredentialService;
 import com.genersoft.iot.vmp.media.service.IMediaServerService;
 import com.genersoft.iot.vmp.media.zlm.dto.ZLMResult;
 import com.genersoft.iot.vmp.media.zlm.dto.ZLMServerConfig;
@@ -21,6 +23,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.util.ObjectUtils;
+import org.springframework.web.util.UriUtils;
 
 import java.io.File;
 import java.util.HashMap;
@@ -28,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.nio.charset.StandardCharsets;
 
 /**
  * 管理zlm流媒体节点的状态
@@ -64,6 +68,9 @@ public class ZLMMediaServerStatusManager {
 
     @Autowired
     private EventPublisher eventPublisher;
+
+    @Autowired
+    private MediaHookCredentialService mediaHookCredentialService;
 
     private final String type = "zlm";
 
@@ -250,17 +257,31 @@ public class ZLMMediaServerStatusManager {
         mediaServerItem.setHookAliveInterval(zlmServerConfig.getHookAliveInterval());
     }
 
-    public void setZLMConfig(MediaServer mediaServerItem, boolean restart) {
+    public boolean setZLMConfig(MediaServer mediaServerItem, boolean restart) {
         log.info("[媒体服务节点] 正在设置 ：{} -> {}:{}",
                 mediaServerItem.getId(), mediaServerItem.getIp(), mediaServerItem.getHttpPort());
+        if (Boolean.FALSE.equals(mediaServerItem.getHookAuthEnabled())) {
+            log.warn("[媒体服务节点] Hook 身份已停用，不下发回调配置：{}",
+                    mediaServerItem.getId());
+            return false;
+        }
+        String rawHookSecret = mediaHookCredentialService.ensureCredential(
+                mediaServerItem);
         String protocol = sslEnabled ? "https" : "http";
-        String hookPrefix = String.format("%s://%s:%s%s/index/hook", protocol, mediaServerItem.getHookIp(), serverPort, (serverServletContextPath == null || "/".equals(serverServletContextPath)) ? "" : serverServletContextPath);
+        String hookPrefix = String.format("%s://%s:%s%s/index/hook/zlm", protocol, mediaServerItem.getHookIp(), serverPort, (serverServletContextPath == null || "/".equals(serverServletContextPath)) ? "" : serverServletContextPath);
 
         Map<String, Object> param = new HashMap<>();
         if (mediaServerItem.getRtspPort() != 0) {
             param.put("ffmpeg.snap", "%s -rtsp_transport tcp -i %s -y -f mjpeg -frames:v 1 %s");
         }
         param.put("hook.enable","1");
+        param.put("hook.admin_params", String.format(
+                "%s=%s&%s=%s",
+                MediaHookAuthenticationFilter.MEDIA_SERVER_ID_PARAM,
+                UriUtils.encode(
+                        mediaServerItem.getId(), StandardCharsets.UTF_8),
+                MediaHookAuthenticationFilter.HOOK_SECRET_PARAM,
+                UriUtils.encode(rawHookSecret, StandardCharsets.UTF_8)));
         param.put("hook.on_flow_report","");
         param.put("hook.on_play",String.format("%s/on_play", hookPrefix));
         param.put("hook.on_http_access","");
@@ -307,9 +328,11 @@ public class ZLMMediaServerStatusManager {
                 log.info("[媒体服务节点] 设置成功 {} -> {}:{}",
                         mediaServerItem.getId(), mediaServerItem.getIp(), mediaServerItem.getHttpPort());
             }
+            return true;
         }else {
             log.info("[媒体服务节点] 设置媒体服务节点失败 {} -> {}:{}",
                     mediaServerItem.getId(), mediaServerItem.getIp(), mediaServerItem.getHttpPort());
+            return false;
         }
     }
 

@@ -4,6 +4,9 @@ import com.alibaba.excel.EasyExcel;
 import com.alibaba.excel.ExcelReader;
 import com.alibaba.excel.exception.ExcelDataConvertException;
 import com.alibaba.excel.read.metadata.ReadSheet;
+import com.genersoft.iot.vmp.authorization.AuthorizationFacade;
+import com.genersoft.iot.vmp.authorization.video.StreamResourceAccessAuthorizer;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceRef;
 import com.genersoft.iot.vmp.common.enums.ChannelDataType;
 import com.genersoft.iot.vmp.conf.UserSetting;
 import com.genersoft.iot.vmp.conf.exception.ControllerException;
@@ -11,6 +14,7 @@ import com.genersoft.iot.vmp.conf.security.JwtUtils;
 import com.genersoft.iot.vmp.gb28181.transmit.callback.DeferredResultHolder;
 import com.genersoft.iot.vmp.gb28181.transmit.callback.RequestMessage;
 import com.genersoft.iot.vmp.media.service.IMediaServerService;
+import com.genersoft.iot.vmp.media.security.PlayableStreamService;
 import com.genersoft.iot.vmp.service.IMediaService;
 import com.genersoft.iot.vmp.streamPush.bean.BatchRemoveParam;
 import com.genersoft.iot.vmp.streamPush.bean.StreamPush;
@@ -30,6 +34,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
 import org.springframework.web.bind.annotation.*;
@@ -50,13 +55,29 @@ import java.util.UUID;
 @RestController
 @Slf4j
 @RequestMapping(value = "/api/push")
+@PreAuthorize("@authz.check('video:push:list')")
 public class StreamPushController {
+
+    private static final String PUSH_LIST_PERMISSION = "video:push:list";
+    private static final String PUSH_EDIT_PERMISSION = "video:push:edit";
+    private static final String PUSH_PLAY_PERMISSION = "video:push:play";
+    private static final String PUSH_STOP_PERMISSION = "video:push:stop";
+    private static final String PUSH_REMOVE_PERMISSION = "video:push:remove";
 
     @Autowired
     private IStreamPushService streamPushService;
 
     @Autowired
+    private AuthorizationFacade authorizationFacade;
+
+    @Autowired
+    private StreamResourceAccessAuthorizer streamResourceAccessAuthorizer;
+
+    @Autowired
     private IStreamPushPlayService streamPushPlayService;
+
+    @Autowired
+    private PlayableStreamService playableStreamService;
 
     @Autowired
     private IMediaServerService mediaServerService;
@@ -90,21 +111,31 @@ public class StreamPushController {
         if (ObjectUtils.isEmpty(mediaServerId)) {
             mediaServerId = null;
         }
-        PageInfo<StreamPush> pushList = streamPushService.getPushList(page, count, query, pushing, mediaServerId);
+        PageInfo<StreamPush> pushList = streamPushService.getPushList(
+                page,
+                count,
+                query,
+                pushing,
+                mediaServerId,
+                authorizationFacade.resolveVideoScopeQuery(PUSH_LIST_PERMISSION));
         return pushList;
     }
 
 
+    @PreAuthorize("@authz.check('video:push:remove')")
     @PostMapping(value = "/remove")
     @ResponseBody
     @Operation(summary = "删除", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "id", description = "应用名", required = true)
     public void delete(int id){
+        streamResourceAccessAuthorizer.requirePushId(
+                PUSH_REMOVE_PERMISSION, id);
         if (streamPushService.delete(id) <= 0){
             throw new ControllerException(ErrorCode.ERROR100);
         }
     }
 
+    @PreAuthorize("@authz.check('video:push:add')")
     @PostMapping(value = "upload")
     @ResponseBody
     public DeferredResult<ResponseEntity<WVPResult<Object>>> uploadChannelFile(@RequestParam(value = "file") MultipartFile file){
@@ -213,6 +244,7 @@ public class StreamPushController {
      * @param stream 推流信息
      * @return
      */
+    @PreAuthorize("@authz.check('video:push:add')")
     @PostMapping(value = "/add")
     @ResponseBody
     @Operation(summary = "添加推流信息", security = @SecurityRequirement(name = JwtUtils.HEADER))
@@ -233,6 +265,7 @@ public class StreamPushController {
         return stream;
     }
 
+    @PreAuthorize("@authz.check('video:push:edit')")
     @PostMapping(value = "/update")
     @ResponseBody
     @Operation(summary = "更新推流信息", security = @SecurityRequirement(name = JwtUtils.HEADER))
@@ -240,26 +273,35 @@ public class StreamPushController {
         if (ObjectUtils.isEmpty(stream.getId())) {
             throw new ControllerException(ErrorCode.ERROR400.getCode(), "ID不可为空");
         }
+        streamResourceAccessAuthorizer.requirePushId(
+                PUSH_EDIT_PERMISSION, stream.getId());
         if (!streamPushService.update(stream)) {
             throw new ControllerException(ErrorCode.ERROR100);
         }
     }
 
+    @PreAuthorize("@authz.check('video:push:remove')")
     @DeleteMapping(value = "/batchRemove")
     @ResponseBody
     @Operation(summary = "删除多个推流", security = @SecurityRequirement(name = JwtUtils.HEADER))
     public void batchStop(@RequestBody BatchRemoveParam ids){
-        if(ids.getIds().isEmpty()) {
+        Assert.notNull(ids, "推流 ID 集合不可为 NULL");
+        if (ids.getIds() == null || ids.getIds().isEmpty()) {
             return;
         }
+        streamResourceAccessAuthorizer.requireAllPushIds(
+                PUSH_REMOVE_PERMISSION, ids.getIds());
         streamPushService.batchRemove(ids.getIds());
     }
 
+    @PreAuthorize("@authz.check('video:push:play')")
     @GetMapping(value = "/start")
     @ResponseBody
     @Operation(summary = "开始播放", security = @SecurityRequirement(name = JwtUtils.HEADER))
     public DeferredResult<WVPResult<StreamContent>> start(HttpServletRequest request, Integer id){
         Assert.notNull(id, "推流ID不可为NULL");
+        VideoResourceRef playableResource = streamResourceAccessAuthorizer.requirePushId(
+                PUSH_PLAY_PERMISSION, id);
         DeferredResult<WVPResult<StreamContent>> result = new DeferredResult<>(userSetting.getPlayTimeout().longValue());
         result.onTimeout(()->{
             WVPResult<StreamContent> fail = WVPResult.fail(ErrorCode.ERROR100.getCode(), "等待推流超时");
@@ -278,18 +320,21 @@ public class StreamPushController {
                     }
                     streamInfo.changeStreamIp(host);
                 }
-                WVPResult<StreamContent> success = WVPResult.success(new StreamContent(streamInfo));
+                WVPResult<StreamContent> success = WVPResult.success(
+                        playableStreamService.publish(streamInfo, playableResource));
                 result.setResult(success);
             }
         }, null, null);
         return result;
     }
 
+    @PreAuthorize("@authz.check('video:push:stop')")
     @GetMapping(value = "/forceClose")
     @ResponseBody
     @Operation(summary = "强制停止推流", security = @SecurityRequirement(name = JwtUtils.HEADER))
     public void stop(String app, String stream){
-
+        streamResourceAccessAuthorizer.requirePush(
+                PUSH_STOP_PERMISSION, app, stream);
         streamPushPlayService.stop(app, stream);
     }
 }

@@ -1,6 +1,10 @@
 package com.genersoft.iot.vmp.streamProxy.service.impl;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.genersoft.iot.vmp.authorization.video.VideoResourceLifecycleService;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceRef;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceType;
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.common.StreamInfo;
 import com.genersoft.iot.vmp.common.enums.ChannelDataType;
 import com.genersoft.iot.vmp.common.enums.MediaStreamUtil;
@@ -40,8 +44,11 @@ import org.springframework.util.ObjectUtils;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 /**
  * 视频代理业务
@@ -67,6 +74,9 @@ public class StreamProxyServiceImpl implements IStreamProxyService {
 
     @Autowired
     private IGbChannelService gbChannelService;
+
+    @Autowired
+    private VideoResourceLifecycleService resourceLifecycleService;
 
     @Autowired
     DataSourceTransactionManager dataSourceTransactionManager;
@@ -155,6 +165,7 @@ public class StreamProxyServiceImpl implements IStreamProxyService {
     }
 
     @Override
+    @Transactional
     public void delete(int id) {
         StreamProxy streamProxy = getStreamProxy(id);
         if (streamProxy == null) {
@@ -165,6 +176,7 @@ public class StreamProxyServiceImpl implements IStreamProxyService {
 
     private void delete(StreamProxy streamProxy) {
         Assert.notNull(streamProxy, "代理不可为NULL");
+        resourceLifecycleService.removeAll(resourceRefs(streamProxy));
         if (streamProxy.getPulling() != null && streamProxy.getPulling()) {
             playService.stopProxy(streamProxy);
         }
@@ -172,6 +184,17 @@ public class StreamProxyServiceImpl implements IStreamProxyService {
             gbChannelService.delete(streamProxy.getGbId());
         }
         streamProxyMapper.delete(streamProxy.getId());
+    }
+
+    private Set<VideoResourceRef> resourceRefs(StreamProxy streamProxy) {
+        LinkedHashSet<VideoResourceRef> resources = new LinkedHashSet<>();
+        resources.add(new VideoResourceRef(
+                VideoResourceType.STREAM_PROXY, streamProxy.getId()));
+        if (streamProxy.getGbId() > 0) {
+            resources.add(new VideoResourceRef(
+                    VideoResourceType.CHANNEL, streamProxy.getGbId()));
+        }
+        return Set.copyOf(resources);
     }
 
     @Override
@@ -206,14 +229,22 @@ public class StreamProxyServiceImpl implements IStreamProxyService {
     }
 
     @Override
-    public PageInfo<StreamProxy> getAll(Integer page, Integer count, String query, Boolean pulling, String mediaServerId) {
+    public PageInfo<StreamProxy> getAll(
+            Integer page,
+            Integer count,
+            String query,
+            Boolean pulling,
+            String mediaServerId,
+            VideoScopeQuery scope) {
+        Objects.requireNonNull(scope, "scope must not be null");
         PageHelper.startPage(page, count);
         if (query != null) {
             query = query.replaceAll("/", "//")
                     .replaceAll("%", "/%")
                     .replaceAll("_", "/_");
         }
-        List<StreamProxy> all = streamProxyMapper.selectAll(query, pulling, mediaServerId);
+        List<StreamProxy> all = streamProxyMapper.selectAll(
+                query, pulling, mediaServerId, scope);
         return new PageInfo<>(all);
     }
 
@@ -293,7 +324,6 @@ public class StreamProxyServiceImpl implements IStreamProxyService {
             gbChannelService.online(channelListForOnline, true);
         }
         List<CommonGBChannel> channelListForOffline = new ArrayList<>();
-        List<StreamProxy> streamProxiesForRemove = new ArrayList<>();
         if (!streamProxyMapForDb.isEmpty()) {
             for (StreamProxy streamProxy : streamProxyMapForDb.values()) {
                 if ("ON".equalsIgnoreCase(streamProxy.getGbStatus()) && streamProxy.getGbId() > 0) {
@@ -304,9 +334,6 @@ public class StreamProxyServiceImpl implements IStreamProxyService {
         }
         if (!channelListForOffline.isEmpty()) {
             gbChannelService.offline(channelListForOffline, true);
-        }
-        if (!streamProxiesForRemove.isEmpty()) {
-            streamProxyMapper.deleteByList(streamProxiesForRemove);
         }
 
         if (!streamProxyMapForDb.isEmpty()) {
@@ -368,12 +395,8 @@ public class StreamProxyServiceImpl implements IStreamProxyService {
     }
 
     @Override
-    public ResourceBaseInfo getOverview() {
-
-        int total = streamProxyMapper.getAllCount();
-        int online = streamProxyMapper.getOnline();
-
-        return new ResourceBaseInfo(total, online);
+    public ResourceBaseInfo getOverview(VideoScopeQuery scope) {
+        return streamProxyMapper.getOverview(scope);
     }
 
     @Override

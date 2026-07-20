@@ -3,7 +3,14 @@
     <div style="height: calc(100vh - 124px);">
       <el-form :inline="true" size="mini">
         <el-form-item>
-          <el-button icon="el-icon-plus" size="mini" style="margin-right: 1rem;" type="primary" @click="addUser">
+          <el-button
+            v-hasPermi="['system:user:add']"
+            icon="el-icon-plus"
+            size="mini"
+            style="margin-right: 1rem;"
+            type="primary"
+            @click="addUser"
+          >
             添加用户
           </el-button>
         </el-form-item>
@@ -20,17 +27,36 @@
         header-row-class-name="table-header"
       >
         <el-table-column prop="username" label="用户名" min-width="160" />
-        <el-table-column prop="pushKey" label="pushkey" min-width="160" />
-        <el-table-column prop="role.name" label="类型" min-width="160" />
-        <el-table-column label="操作" min-width="450" fixed="right">
+        <el-table-column label="角色 ID" min-width="160">
           <template v-slot:default="scope">
-            <el-button size="medium" icon="el-icon-edit" type="text" @click="edit(scope.row)">修改密码</el-button>
-            <el-divider direction="vertical" />
-            <el-button size="medium" icon="el-icon-edit" type="text" @click="changePushKey(scope.row)">修改pushkey</el-button>
-            <el-divider direction="vertical" />
-            <el-button size="medium" icon="el-icon-edit" type="text" @click="showUserApiKeyManager(scope.row)">管理ApiKey</el-button>
-            <el-divider direction="vertical" />
+            {{ formatRoleIds(scope.row.roleIds) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" min-width="400" fixed="right">
+          <template v-slot:default="scope">
             <el-button
+              v-hasPermi="['system:user:resetPwd']"
+              size="medium"
+              icon="el-icon-edit"
+              type="text"
+              @click="edit(scope.row)"
+            >修改密码</el-button>
+            <el-button
+              v-hasPermi="['system:user:edit']"
+              size="medium"
+              icon="el-icon-edit"
+              type="text"
+              @click="changePushKey(scope.row)"
+            >修改pushkey</el-button>
+            <el-button
+              v-hasPermi="['system:apikey:list']"
+              size="medium"
+              icon="el-icon-key"
+              type="text"
+              @click="showUserApiKeyManager(scope.row)"
+            >管理ApiKey</el-button>
+            <el-button
+              v-hasPermi="['system:user:remove']"
               size="medium"
               icon="el-icon-delete"
               type="text"
@@ -101,6 +127,9 @@ export default {
       this.count = val
       this.getUserList()
     },
+    formatRoleIds: function(roleIds) {
+      return Array.isArray(roleIds) && roleIds.length > 0 ? roleIds.join('、') : '-'
+    },
     getUserList: function() {
       this.$store.dispatch('user/queryList', {
         page: this.currentPage,
@@ -129,12 +158,7 @@ export default {
       })
     },
     deleteUser: function(row) {
-      let msg = '确定删除此用户？'
-      if (row.online !== 0) {
-        msg = '<strong>确定删除此用户？</strong>'
-      }
-      this.$confirm(msg, '提示', {
-        dangerouslyUseHTMLString: true,
+      this.$confirm('确定删除此用户？', '提示', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
         center: true,

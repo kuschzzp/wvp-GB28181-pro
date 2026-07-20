@@ -1,4 +1,3 @@
-version: '3'
 services:
   polaris-redis:
     image: redis:latest  # 使用官方Redis镜像
@@ -42,8 +41,10 @@ services:
     volumes:
       - ./mysql/conf:/etc/mysql/conf.d
       - ./logs/mysql:/logs
-      - ./volumes/mysql/data:/var/lib/mysql  
-      - ../数据库/2.7.4/初始化-mysql-2.7.4.sql:/docker-entrypoint-initdb.d/init.sql  # 初始化SQL脚本目录
+      - ./volumes/mysql/data:/var/lib/mysql
+      - ./mysql/db/wvp.sql:/docker-entrypoint-initdb.d/01-wvp.sql:ro
+      - ./mysql/db/wvp-authorization.sql:/docker-entrypoint-initdb.d/02-wvp-authorization.sql:ro
+      - ./mysql/db/wvp-authorization-final.sql:/docker-entrypoint-initdb.d/03-wvp-authorization-final.sql:ro
     command: [
           # '--default-authentication-plugin=mysql_native_password',
           '--innodb-buffer-pool-size=80M',
@@ -88,9 +89,10 @@ services:
     networks:
       - media-net
     ports:
-      - "18978:18978"
       - "${SIP_Port:-8116}:${SIP_Port:-8116}/udp"
       - "${SIP_Port:-8116}:${SIP_Port:-8116}/tcp"
+    expose:
+      - "18978"
     depends_on:
       - polaris-redis
       - polaris-mysql
@@ -99,6 +101,7 @@ services:
       - ./wvp/config:/opt/wvp/config
       - ./wvp/wvp/:/opt/ylcx/wvp/
       - ./logs/wvp:/opt/wvp/logs/
+      - ./volumes/video:/opt/media/bin/www/record/:ro
     environment:
       TZ: "Asia/Shanghai"
       # docker env
@@ -111,6 +114,8 @@ services:
       ZLM_HOOK_HOST: polaris-wvp
       ZLM_HOST: polaris-media
       ZLM_SERCERT: su6TiedN2rVAmBbIDX0aa0QTiBJLBdcf
+      MEDIA_HOOK_SECRET_PEPPER: "${MEDIA_HOOK_SECRET_PEPPER:?must be at least 32 bytes}"
+      API_KEY_PEPPER: "${API_KEY_PEPPER:?must be at least 32 bytes}"
 
       MediaHttp: ${WebHttp:-8080}
       #MediaHttps: ${WebHttps:-8081}
@@ -147,6 +152,7 @@ services:
     volumes:
       - ./nginx/templates/:/etc/nginx/templates
       - ./logs/nginx:/var/log/nginx
+      - ./volumes/video:/opt/media/bin/www/record/:ro
     environment:
       # 流链接的IP
       Stream_IP: ${Stream_IP}

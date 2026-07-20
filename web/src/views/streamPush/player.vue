@@ -26,7 +26,7 @@
             </div>
           </div>
           <div class="info-card info-card--bottom">
-            <streamMediaPanel :player-url="playerUrlInfo.playerUrl" :play-url="playerUrlInfo.playUrl" :stream-info="streamInfo" />
+            <streamMediaPanel :playable-ref="playableRef" :expires-at="playerUrlInfo.expiresAt" />
           </div>
         </div>
       </div>
@@ -55,10 +55,10 @@ export default {
       isLoging: false,
       showVideoDialog: false,
       streamInfo: null,
+      playableRef: null,
       playerHeight: '48vh',
       playerUrlInfo: {
-        playerUrl: null,
-        playUrl: null,
+        expiresAt: null
       }
     }
   },
@@ -76,6 +76,7 @@ export default {
     },
     play: function(streamInfo, hasAudio) {
       this.streamInfo = streamInfo
+      this.playableRef = (streamInfo.transcodeStream || streamInfo).playable
       this.hasAudio = hasAudio
       this.isLoging = false
       this.streamId = streamInfo.stream
@@ -84,7 +85,7 @@ export default {
       this.showVideoDialog = true
       this.$nextTick(() => {
         if (this.$refs.playerTabs) {
-          this.$refs.playerTabs.setStreamInfo(streamInfo.transcodeStream || streamInfo)
+          this.$refs.playerTabs.setStreamInfo(this.playableRef)
         }
         this.$refs.mediaInfo && this.$refs.mediaInfo.startTask()
       })
@@ -98,6 +99,7 @@ export default {
       }
       this.$refs.mediaInfo && this.$refs.mediaInfo.stopTask()
       this.videoUrl = ''
+      this.playableRef = null
       this.showVideoDialog = false
     },
   }

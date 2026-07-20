@@ -1,6 +1,7 @@
 package com.genersoft.iot.vmp.conf;
 
 import com.alibaba.fastjson2.JSON;
+import com.genersoft.iot.vmp.auth.security.SecurityError;
 import com.genersoft.iot.vmp.vmanager.bean.ErrorCode;
 import com.genersoft.iot.vmp.vmanager.bean.WVPResult;
 import org.jetbrains.annotations.NotNull;
@@ -43,6 +44,10 @@ public class GlobalResponseAdvice implements ResponseBodyAdvice<Object> {
         }
 
         if (body instanceof WVPResult) {
+            return body;
+        }
+
+        if (body instanceof SecurityError) {
             return body;
         }
 

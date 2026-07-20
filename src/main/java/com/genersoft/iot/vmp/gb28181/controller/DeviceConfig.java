@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.gb28181.controller;
 
+import com.genersoft.iot.vmp.authorization.video.GbChannelAccessAuthorizer;
 import com.genersoft.iot.vmp.conf.security.JwtUtils;
 import com.genersoft.iot.vmp.gb28181.bean.*;
 import com.genersoft.iot.vmp.gb28181.service.IDeviceService;
@@ -11,7 +12,9 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.Assert;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.request.async.DeferredResult;
 
@@ -19,10 +22,17 @@ import org.springframework.web.context.request.async.DeferredResult;
 @Tag(name = "国标设备配置")
 @RestController
 @RequestMapping("/api/device/config")
+@PreAuthorize("@authz.check('video:device:config')")
 public class DeviceConfig {
+
+    private static final String DEVICE_CONFIG_PERMISSION =
+            "video:device:config";
 
     @Autowired
     private IDeviceService deviceService;
+
+    @Autowired
+    private GbChannelAccessAuthorizer channelAccessAuthorizer;
 
     @GetMapping("/set/basicParam")
     @Operation(summary = "设置基本配置", security = @SecurityRequirement(name = JwtUtils.HEADER))
@@ -32,6 +42,8 @@ public class DeviceConfig {
             log.debug("基本配置设置命令API调用");
         }
         Assert.notNull(basicParam.getDeviceId(), "设备ID必须存在");
+        requireConfigTarget(
+                basicParam.getDeviceId(), basicParam.getChannelId());
 
         Device device = deviceService.getDeviceByDeviceId(basicParam.getDeviceId());
         Assert.notNull(device, "设备不存在");
@@ -56,6 +68,7 @@ public class DeviceConfig {
             log.debug("视频参数设置命令API调用");
         }
         Assert.notNull(videoParamOpt.getDeviceId(), "设备ID必须存在");
+        requireConfigTarget(videoParamOpt.getDeviceId(), null);
 
         Device device = deviceService.getDeviceByDeviceId(videoParamOpt.getDeviceId());
         Assert.notNull(device, "设备不存在");
@@ -78,6 +91,8 @@ public class DeviceConfig {
     @GetMapping("/query/basicParam")
     public DeferredResult<WVPResult<BasicParam>> queryBasicParam(String deviceId,
                                                                   @RequestParam(required = false) String channelId) {
+        Assert.hasText(deviceId, "设备ID必须存在");
+        requireConfigTarget(deviceId, channelId);
         Device device = deviceService.getDeviceByDeviceId(deviceId);
         Assert.notNull(device, "设备不存在");
         DeferredResult<WVPResult<BasicParam>> deferredResult = new DeferredResult<>();
@@ -99,6 +114,8 @@ public class DeviceConfig {
     @GetMapping("/query/videoParamOpt")
     public DeferredResult<WVPResult<VideoParamOpt>> queryVideoParamOpt(String deviceId,
                                                                         @RequestParam(required = false) String channelId) {
+        Assert.hasText(deviceId, "设备ID必须存在");
+        requireConfigTarget(deviceId, channelId);
         Device device = deviceService.getDeviceByDeviceId(deviceId);
         Assert.notNull(device, "设备不存在");
         DeferredResult<WVPResult<VideoParamOpt>> deferredResult = new DeferredResult<>();
@@ -118,6 +135,8 @@ public class DeviceConfig {
     @GetMapping("/query/svacEncodeConfig")
     public DeferredResult<WVPResult<SVACEncodeConfig>> querySVACEncodeConfig(String deviceId,
                                                                               @RequestParam(required = false) String channelId) {
+        Assert.hasText(deviceId, "设备ID必须存在");
+        requireConfigTarget(deviceId, channelId);
         Device device = deviceService.getDeviceByDeviceId(deviceId);
         Assert.notNull(device, "设备不存在");
         DeferredResult<WVPResult<SVACEncodeConfig>> deferredResult = new DeferredResult<>();
@@ -137,6 +156,8 @@ public class DeviceConfig {
     @GetMapping("/query/svacDecodeConfig")
     public DeferredResult<WVPResult<SVACDecodeConfig>> querySVACDecodeConfig(String deviceId,
                                                                               @RequestParam(required = false) String channelId) {
+        Assert.hasText(deviceId, "设备ID必须存在");
+        requireConfigTarget(deviceId, channelId);
         Device device = deviceService.getDeviceByDeviceId(deviceId);
         Assert.notNull(device, "设备不存在");
         DeferredResult<WVPResult<SVACDecodeConfig>> deferredResult = new DeferredResult<>();
@@ -148,6 +169,16 @@ public class DeviceConfig {
             deferredResult.setResult(WVPResult.fail(ErrorCode.ERROR100.getCode(), "超时"));
         });
         return deferredResult;
+    }
+
+    private void requireConfigTarget(String deviceId, String channelId) {
+        if (!StringUtils.hasText(channelId) || deviceId.equals(channelId)) {
+            channelAccessAuthorizer.requireGbDevice(
+                    DEVICE_CONFIG_PERMISSION, deviceId);
+            return;
+        }
+        channelAccessAuthorizer.requireGbChannel(
+                DEVICE_CONFIG_PERMISSION, deviceId, channelId);
     }
 
 }

@@ -1,9 +1,12 @@
 package com.genersoft.iot.vmp.vmanager.server;
 
+import com.genersoft.iot.vmp.authorization.video.StreamResourceAccessAuthorizer;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.genersoft.iot.vmp.common.SystemAllInfo;
 import com.genersoft.iot.vmp.common.VersionPo;
+import com.genersoft.iot.vmp.authorization.AuthorizationFacade;
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.conf.SipConfig;
 import com.genersoft.iot.vmp.conf.UserSetting;
 import com.genersoft.iot.vmp.conf.VersionInfo;
@@ -15,7 +18,12 @@ import com.genersoft.iot.vmp.jt1078.config.JT1078Config;
 import com.genersoft.iot.vmp.media.bean.MediaInfo;
 import com.genersoft.iot.vmp.media.bean.MediaServer;
 import com.genersoft.iot.vmp.media.event.mediaServer.MediaServerChangeEvent;
+import com.genersoft.iot.vmp.media.abl.ABLMediaServerStatusManger;
+import com.genersoft.iot.vmp.media.security.MediaHookCredentialService;
+import com.genersoft.iot.vmp.media.security.MediaNodeType;
+import com.genersoft.iot.vmp.media.security.dto.MediaHookSecretRotationResponse;
 import com.genersoft.iot.vmp.media.service.IMediaServerService;
+import com.genersoft.iot.vmp.media.zlm.ZLMMediaServerStatusManager;
 import com.genersoft.iot.vmp.service.IMapService;
 import com.genersoft.iot.vmp.service.bean.MediaServerLoad;
 import com.genersoft.iot.vmp.storager.IRedisCatchStorage;
@@ -32,6 +40,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.ObjectUtils;
 import org.springframework.web.bind.annotation.*;
 import oshi.SystemInfo;
@@ -50,7 +59,13 @@ import java.util.*;
 @Slf4j
 @RestController
 @RequestMapping("/api/server")
+@PreAuthorize("@authz.check('operations:system:view')")
 public class ServerController {
+
+    private static final String MEDIA_SERVER_LIST_PERMISSION =
+            "video:media-server:list";
+
+    private static final String RESOURCE_INFO_PERMISSION = "operations:system:view";
 
 
     @Autowired
@@ -80,6 +95,21 @@ public class ServerController {
     @Autowired
     private IStreamProxyService proxyService;
 
+    @Autowired
+    private AuthorizationFacade authorizationFacade;
+
+    @Autowired
+    private StreamResourceAccessAuthorizer streamResourceAccessAuthorizer;
+
+    @Autowired
+    private MediaHookCredentialService mediaHookCredentialService;
+
+    @Autowired
+    private ZLMMediaServerStatusManager zlmMediaServerStatusManager;
+
+    @Autowired
+    private ABLMediaServerStatusManger ablMediaServerStatusManger;
+
 
     @Autowired(required = false)
     private IMapService mapService;
@@ -95,6 +125,7 @@ public class ServerController {
     private ApplicationEventPublisher applicationEventPublisher;
 
 
+    @PreAuthorize("@authz.check('video:media-server:list')")
     @GetMapping(value = "/media_server/list")
     @ResponseBody
     @Operation(summary = "流媒体服务列表", security = @SecurityRequirement(name = JwtUtils.HEADER))
@@ -102,6 +133,7 @@ public class ServerController {
         return mediaServerService.getAll();
     }
 
+    @PreAuthorize("@authz.check('video:media-server:list')")
     @GetMapping(value = "/media_server/online/list")
     @ResponseBody
     @Operation(summary = "在线流媒体服务列表", security = @SecurityRequirement(name = JwtUtils.HEADER))
@@ -109,6 +141,7 @@ public class ServerController {
         return mediaServerService.getAllOnline();
     }
 
+    @PreAuthorize("@authz.check('video:media-server:list')")
     @GetMapping(value = "/media_server/one/{id}")
     @ResponseBody
     @Operation(summary = "停止视频回放", security = @SecurityRequirement(name = JwtUtils.HEADER))
@@ -121,6 +154,7 @@ public class ServerController {
     @Parameter(name = "ip", description = "流媒体服务IP", required = true)
     @Parameter(name = "port", description = "流媒体服务HTT端口", required = true)
     @Parameter(name = "secret", description = "流媒体服务secret", required = true)
+    @PreAuthorize("@authz.check('video:media-server:manage')")
     @GetMapping(value = "/media_server/check")
     @ResponseBody
     public MediaServer checkMediaServer(@RequestParam String ip, @RequestParam int port, @RequestParam String secret, @RequestParam String type) {
@@ -130,6 +164,7 @@ public class ServerController {
     @Operation(summary = "测试流媒体录像管理服务", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "ip", description = "流媒体服务IP", required = true)
     @Parameter(name = "port", description = "流媒体服务HTT端口", required = true)
+    @PreAuthorize("@authz.check('video:media-server:manage')")
     @GetMapping(value = "/media_server/record/check")
     @ResponseBody
     public void checkMediaRecordServer(@RequestParam String ip, @RequestParam int port) {
@@ -141,6 +176,7 @@ public class ServerController {
 
     @Operation(summary = "保存流媒体服务", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "mediaServerItem", description = "流媒体信息", required = true)
+    @PreAuthorize("@authz.check('video:media-server:manage')")
     @PostMapping(value = "/media_server/save")
     @ResponseBody
     public void saveMediaServer(@RequestBody MediaServer mediaServer) {
@@ -159,6 +195,7 @@ public class ServerController {
 
     @Operation(summary = "移除流媒体服务", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "id", description = "流媒体ID", required = true)
+    @PreAuthorize("@authz.check('video:media-server:manage')")
     @DeleteMapping(value = "/media_server/delete")
     @ResponseBody
     public void deleteMediaServer(@RequestParam String id) {
@@ -169,13 +206,72 @@ public class ServerController {
         mediaServerService.delete(mediaServer);
     }
 
+    @Operation(
+            summary = "轮换媒体节点 Hook 密钥",
+            security = @SecurityRequirement(name = JwtUtils.HEADER))
+    @Parameter(name = "id", description = "流媒体 ID", required = true)
+    @PreAuthorize("@authz.check('video:media-server:manage')")
+    @PostMapping(value = "/media_server/hook-secret/rotate")
+    @ResponseBody
+    public MediaHookSecretRotationResponse rotateMediaHookSecret(
+            @RequestParam String id) {
+        MediaServer stored = mediaServerService.getOneFromDatabase(id);
+        if (stored == null) {
+            throw new ControllerException(
+                    ErrorCode.ERROR100.getCode(), "流媒体不存在");
+        }
+        if (Boolean.FALSE.equals(stored.getHookAuthEnabled())) {
+            throw new ControllerException(
+                    ErrorCode.ERROR100.getCode(),
+                    "当前媒体节点已停用 Hook 身份认证");
+        }
+
+        final MediaNodeType nodeType;
+        try {
+            nodeType = MediaNodeType.parse(stored.getType());
+        } catch (IllegalArgumentException exception) {
+            throw new ControllerException(
+                    ErrorCode.ERROR100.getCode(),
+                    "不支持的媒体节点类型");
+        }
+
+        MediaServer rotated = mediaHookCredentialService.rotate(id);
+        boolean applied;
+        try {
+            applied = switch (nodeType) {
+                case ZLM -> zlmMediaServerStatusManager.setZLMConfig(
+                        rotated, false);
+                case ABL -> ablMediaServerStatusManger.setAblConfig(
+                        rotated, false, null);
+            };
+        } catch (RuntimeException exception) {
+            log.error("[媒体 Hook] 密钥已轮换但节点配置下发异常：{}", id,
+                    exception);
+            applied = false;
+        }
+
+        if (!applied) {
+            throw new ControllerException(
+                    ErrorCode.ERROR100.getCode(),
+                    "Hook 密钥已轮换但节点配置下发失败；请在旧密钥过渡期内重试");
+        }
+        return new MediaHookSecretRotationResponse(
+                rotated.getId(),
+                rotated.getHookSecretVersion(),
+                rotated.getPreviousHookSecretExpiresAt(),
+                true);
+    }
+
     @Operation(summary = "获取流信息", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "app", description = "应用名", required = true)
     @Parameter(name = "stream", description = "流ID", required = true)
     @Parameter(name = "mediaServerId", description = "流媒体ID", required = true)
+    @PreAuthorize("@authz.check('video:media-server:list')")
     @GetMapping(value = "/media_server/media_info")
     @ResponseBody
     public MediaInfo getMediaInfo(String app, String stream, String mediaServerId) {
+        streamResourceAccessAuthorizer.requireAppStream(
+                MEDIA_SERVER_LIST_PERMISSION, app, stream);
         MediaServer mediaServer = mediaServerService.getOneFromCluster(mediaServerId);
         if (mediaServer == null) {
             throw new ControllerException(ErrorCode.ERROR100.getCode(), "流媒体不存在");
@@ -185,6 +281,7 @@ public class ServerController {
 
 
     @Operation(summary = "关闭服务", security = @SecurityRequirement(name = JwtUtils.HEADER))
+    @PreAuthorize("@authz.check('video:media-server:manage')")
     @GetMapping(value = "/shutdown")
     @ResponseBody
     public void shutdown() {
@@ -247,6 +344,7 @@ public class ServerController {
         return systemAllInfo;
     }
 
+    @PreAuthorize("@authz.check('video:media-server:list')")
     @GetMapping(value = "/media_server/load")
     @ResponseBody
     @Operation(summary = "获取负载信息", security = @SecurityRequirement(name = JwtUtils.HEADER))
@@ -267,14 +365,16 @@ public class ServerController {
     @ResponseBody
     @Operation(summary = "获取负载信息", security = @SecurityRequirement(name = JwtUtils.HEADER))
     public ResourceInfo getResourceInfo() {
+        VideoScopeQuery scope = authorizationFacade.resolveVideoScopeQuery(
+                RESOURCE_INFO_PERMISSION);
         ResourceInfo result = new ResourceInfo();
-        ResourceBaseInfo deviceInfo = deviceService.getOverview();
+        ResourceBaseInfo deviceInfo = deviceService.getOverview(scope);
         result.setDevice(deviceInfo);
-        ResourceBaseInfo channelInfo = channelService.getOverview();
+        ResourceBaseInfo channelInfo = channelService.getOverview(scope);
         result.setChannel(channelInfo);
-        ResourceBaseInfo pushInfo = pushService.getOverview();
+        ResourceBaseInfo pushInfo = pushService.getOverview(scope);
         result.setPush(pushInfo);
-        ResourceBaseInfo proxyInfo = proxyService.getOverview();
+        ResourceBaseInfo proxyInfo = proxyService.getOverview(scope);
         result.setProxy(proxyInfo);
 
         return result;

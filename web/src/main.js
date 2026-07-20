@@ -18,6 +18,8 @@ import '@/permission' // permission control
 import VueClipboards from 'vue-clipboards'
 import Contextmenu from 'vue-contextmenujs'
 import VueClipboard from 'vue-clipboard2'
+import PermissionDirective from '@/directive/permission'
+import { createAuth } from '@/utils/permission'
 
 /**
  * If you don't want to use mock-server
@@ -32,10 +34,13 @@ if (process.env.NODE_ENV === 'production') {
   mockXHR()
 }
 
-Vue.use(ElementUI)
+Vue.use(ElementUI, { locale })
 Vue.use(VueClipboards)
 Vue.use(Contextmenu)
 Vue.use(VueClipboard)
+Vue.use(PermissionDirective)
+
+Vue.prototype.$auth = createAuth(store)
 
 Vue.config.productionTip = false
 

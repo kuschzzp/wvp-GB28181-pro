@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.streamProxy.service;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.common.StreamInfo;
 import com.genersoft.iot.vmp.media.bean.MediaServer;
 import com.genersoft.iot.vmp.service.bean.ErrorCallback;
@@ -17,7 +18,13 @@ public interface IStreamProxyService {
      * @param count
      * @return
      */
-    PageInfo<StreamProxy> getAll(Integer page, Integer count, String query, Boolean pulling,String mediaServerId);
+    PageInfo<StreamProxy> getAll(
+            Integer page,
+            Integer count,
+            String query,
+            Boolean pulling,
+            String mediaServerId,
+            VideoScopeQuery scope);
 
     /**
      * 删除视频代理
@@ -79,7 +86,7 @@ public interface IStreamProxyService {
      * 获取统计信息
      * @return
      */
-    ResourceBaseInfo getOverview();
+    ResourceBaseInfo getOverview(VideoScopeQuery scope);
 
     void add(StreamProxy streamProxy);
 

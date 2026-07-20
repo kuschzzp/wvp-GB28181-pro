@@ -15,5 +15,5 @@ export function isExternal(path) {
  * @returns {Boolean}
  */
 export function validUsername(str) {
-  return str.length >= 0
+  return typeof str === 'string' && /^[A-Za-z0-9_.@-]{1,64}$/.test(str)
 }

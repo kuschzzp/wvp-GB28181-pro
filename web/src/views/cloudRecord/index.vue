@@ -61,6 +61,7 @@
             />
           </el-select>
           <el-button
+            v-hasPermi="['video:cloud-record:remove']"
             icon="el-icon-delete"
             style="margin-right: 1rem;"
             :disabled="multipleSelection.length === 0"
@@ -69,6 +70,7 @@
           >移除
           </el-button>
           <el-button
+            v-hasPermi="['video:cloud-record:download']"
             icon="el-icon-download"
             style="margin-right: 1rem;"
             :disabled="multipleSelection.length === 0"
@@ -110,13 +112,14 @@
         <el-table-column prop="mediaServerId" label="流媒体" />
         <el-table-column label="操作" fixed="right" width="260">
           <template v-slot:default="scope">
-            <el-button size="medium" icon="el-icon-video-play" type="text" @click="play(scope.row)">播放
+            <el-button v-hasPermi="['video:cloud-record:play']" size="medium" icon="el-icon-video-play" type="text" @click="play(scope.row)">播放
             </el-button>
-            <el-button size="medium" icon="el-icon-download" type="text" @click="downloadFile(scope.row)">下载
+            <el-button v-hasPermi="['video:cloud-record:download']" size="medium" icon="el-icon-download" type="text" @click="downloadFile(scope.row)">下载
             </el-button>
-            <el-button size="medium" icon="el-icon-info" type="text" @click="showDetail(scope.row)">详情
+            <el-button v-hasPermi="['video:cloud-record:list']" size="medium" icon="el-icon-info" type="text" @click="showDetail(scope.row)">详情
             </el-button>
             <el-button
+              v-hasPermi="['video:cloud-record:remove']"
               size="medium"
               icon="el-icon-delete"
               type="text"
@@ -146,6 +149,7 @@
 import playerDialog from './playerDialog.vue'
 import moment from 'moment'
 import Vue from 'vue'
+import { openDownloadTicket } from '@/utils/downloadTicket'
 
 export default {
   name: 'CloudRecord',
@@ -231,6 +235,7 @@ export default {
         })
     },
     play(row) {
+      if (!this.$auth.hasPermi(['video:cloud-record:play'])) return
       this.chooseRecord = row
       this.$refs.playerDialog.stopPlay()
       this.$store.dispatch('cloudRecord/loadRecord', {
@@ -249,43 +254,21 @@ export default {
         })
     },
     downloadFile(row) {
+      if (!this.$auth.hasPermi(['video:cloud-record:download'])) return
       this.$store.dispatch('cloudRecord/getPlayPath', row.id)
         .then((data) => {
-          const link = document.createElement('a')
-          link.target = '_blank'
-          if (location.protocol === 'https:') {
-            if (data.httpsPath) {
-              link.href = data.httpsPath + '&save_name=' + row.fileName
-            }else if (data.httpPath){
-              link.href = data.httpPath + '&save_name=' + row.fileName
-            }else {
-              this.$message.error({
-                showClose: true,
-                message: '获取下载地址失败'
-              })
-            }
-          } else {
-            if (data.httpPath) {
-              link.href = data.httpPath + '&save_name=' + row.fileName
-            }else if (data.httpsPath){
-              link.href = data.httpsPath + '&save_name=' + row.fileName
-            }else {
-              this.$message.error({
-                showClose: true,
-                message: '获取下载地址失败'
-              })
-            }
-          }
-          link.click()
+          openDownloadTicket(data)
         })
         .catch((error) => {
           console.log(error)
         })
     },
     showDetail(row) {
+      if (!this.$auth.hasPermi(['video:cloud-record:list'])) return
       this.$router.push(`/cloudRecord/detail/${row.app}/${row.stream}`)
     },
     deleteRecord() {
+      if (!this.$auth.hasPermi(['video:cloud-record:remove'])) return
       this.$confirm(`确定删除选中的${this.multipleSelection.length}个文件?`, '提示', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
@@ -308,20 +291,17 @@ export default {
       })
     },
     downloadZip() {
+      if (!this.$auth.hasPermi(['video:cloud-record:download'])) return
       const ids = []
       for (let i = 0; i < this.multipleSelection.length; i++) {
         ids.push(this.multipleSelection[i].id)
       }
-      let idsStr = ids.join(',')
-      const link = document.createElement('a')
-      link.target = '_blank'
-      let baseUri = (process.env.NODE_ENV === 'development') ? process.env.VUE_APP_BASE_API : process.env.VUE_APP_BASE_API
-      let downloadUrl = `${location.origin}${baseUri}/api/cloud/record/download/zip?ids=${idsStr}`
-      console.log(downloadUrl)
-      link.href = downloadUrl
-      link.click()
+      this.$store.dispatch('cloudRecord/getZipDownloadTicket', ids)
+        .then(ticket => openDownloadTicket(ticket))
+        .catch(error => console.log(error))
     },
     deleteOneRecord(row) {
+      if (!this.$auth.hasPermi(['video:cloud-record:remove'])) return
       this.$confirm('确定删除?', '提示', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',

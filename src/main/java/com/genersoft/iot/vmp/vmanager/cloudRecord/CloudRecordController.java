@@ -1,24 +1,29 @@
 package com.genersoft.iot.vmp.vmanager.cloudRecord;
 
 import com.alibaba.fastjson2.JSONArray;
+import com.genersoft.iot.vmp.authorization.AuthorizationFacade;
+import com.genersoft.iot.vmp.authorization.video.DerivedResourceAccessAuthorizer;
+import com.genersoft.iot.vmp.authorization.video.GbChannelAccessAuthorizer;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceType;
 import com.genersoft.iot.vmp.common.StreamInfo;
 import com.genersoft.iot.vmp.conf.UserSetting;
 import com.genersoft.iot.vmp.conf.exception.ControllerException;
 import com.genersoft.iot.vmp.conf.security.JwtUtils;
 import com.genersoft.iot.vmp.media.bean.MediaServer;
+import com.genersoft.iot.vmp.media.security.DownloadResourceType;
+import com.genersoft.iot.vmp.media.security.DownloadTicketService;
+import com.genersoft.iot.vmp.media.security.dto.DownloadTicketRequest;
+import com.genersoft.iot.vmp.media.security.dto.DownloadTicketResponse;
+import com.genersoft.iot.vmp.media.security.PlayableStreamService;
 import com.genersoft.iot.vmp.media.service.IMediaServerService;
 import com.genersoft.iot.vmp.service.ICloudRecordService;
 import com.genersoft.iot.vmp.service.bean.CloudRecordItem;
-import com.genersoft.iot.vmp.service.bean.DownloadFileInfo;
 import com.genersoft.iot.vmp.service.bean.ErrorCallback;
 import com.genersoft.iot.vmp.service.bean.InviteErrorCode;
 import com.genersoft.iot.vmp.streamPush.bean.BatchRemoveParam;
-import com.genersoft.iot.vmp.utils.DateUtil;
-import com.genersoft.iot.vmp.utils.HttpUtils;
 import com.genersoft.iot.vmp.vmanager.bean.ErrorCode;
 import com.genersoft.iot.vmp.vmanager.bean.StreamContent;
 import com.genersoft.iot.vmp.vmanager.bean.WVPResult;
-import com.genersoft.iot.vmp.vmanager.cloudRecord.bean.CloudRecordUrl;
 import com.github.pagehelper.PageInfo;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -29,34 +34,54 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ObjectUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.util.StringUtils;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.request.async.DeferredResult;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
 
 @SuppressWarnings("rawtypes")
 @Tag(name = "云端录像接口")
 @Slf4j
 @RestController
 @RequestMapping("/api/cloud/record")
+@PreAuthorize("@authz.check('video:cloud-record:list')")
 public class CloudRecordController {
 
+    private static final String CLOUD_RECORD_LIST_PERMISSION = "video:cloud-record:list";
+    private static final String CLOUD_RECORD_DOWNLOAD_PERMISSION =
+            "video:cloud-record:download";
+    private static final String CLOUD_RECORD_COLLECT_PERMISSION =
+            "video:cloud-record:collect";
+    private static final String CLOUD_RECORD_PLAY_PERMISSION =
+            "video:cloud-record:play";
+    private static final String CLOUD_RECORD_REMOVE_PERMISSION =
+            "video:cloud-record:remove";
 
     @Autowired
     private ICloudRecordService cloudRecordService;
 
     @Autowired
+    private AuthorizationFacade authorizationFacade;
+
+    @Autowired
+    private DerivedResourceAccessAuthorizer derivedResourceAccessAuthorizer;
+
+    @Autowired
+    private GbChannelAccessAuthorizer channelAccessAuthorizer;
+
+    @Autowired
     private IMediaServerService mediaServerService;
+
+    @Autowired
+    private PlayableStreamService playableStreamService;
+
+    @Autowired
+    private DownloadTicketService downloadTicketService;
 
     @Autowired
     private UserSetting userSetting;
@@ -101,7 +126,13 @@ public class CloudRecordController {
             return new ArrayList<>();
         }
 
-        return cloudRecordService.getDateList(app, stream, year, month, mediaServers);
+        return cloudRecordService.getDateList(
+                app,
+                stream,
+                year,
+                month,
+                mediaServers,
+                authorizationFacade.resolveVideoScopeQuery(CLOUD_RECORD_LIST_PERMISSION));
     }
 
     @ResponseBody
@@ -160,7 +191,18 @@ public class CloudRecordController {
         if (callId != null && ObjectUtils.isEmpty(callId.trim())) {
             callId = null;
         }
-        return cloudRecordService.getList(page, count, query, app, stream, startTime, endTime, mediaServers, callId, ascOrder);
+        return cloudRecordService.getList(
+                page,
+                count,
+                query,
+                app,
+                stream,
+                startTime,
+                endTime,
+                mediaServers,
+                callId,
+                ascOrder,
+                authorizationFacade.resolveVideoScopeQuery(CLOUD_RECORD_LIST_PERMISSION));
     }
 
     @ResponseBody
@@ -187,7 +229,11 @@ public class CloudRecordController {
                 remoteHost = request.getScheme() + "://" + mediaServer.getIp() + ":" + mediaServer.getRecordAssistPort();
             }
         }
-        return cloudRecordService.addTask(app, stream, mediaServer, startTime, endTime, callId, remoteHost, mediaServerId != null);
+        return cloudRecordService.addTask(
+                app, stream, mediaServer, startTime, endTime, callId,
+                remoteHost, mediaServerId != null,
+                authorizationFacade.resolveVideoScopeQuery(
+                        CLOUD_RECORD_LIST_PERMISSION));
     }
 
     @ResponseBody
@@ -201,10 +247,20 @@ public class CloudRecordController {
             mediaServerId = null;
         }
 
-        return cloudRecordService.queryTask(app, stream, callId, taskId, mediaServerId, isEnd, request.getScheme());
+        return cloudRecordService.queryTask(
+                app,
+                stream,
+                callId,
+                taskId,
+                mediaServerId,
+                isEnd,
+                request.getScheme(),
+                authorizationFacade.resolveVideoScopeQuery(
+                        CLOUD_RECORD_LIST_PERMISSION));
     }
 
     @ResponseBody
+    @PreAuthorize("@authz.check('video:cloud-record:collect')")
     @GetMapping("/collect/add")
     @Operation(summary = "添加收藏")
     @Parameter(name = "app", description = "应用名", required = false)
@@ -217,13 +273,19 @@ public class CloudRecordController {
     public int addCollect(@RequestParam(required = false) String app, @RequestParam(required = false) String stream, @RequestParam(required = false) String mediaServerId, @RequestParam(required = false) String startTime, @RequestParam(required = false) String endTime, @RequestParam(required = false) String callId, @RequestParam(required = false) Integer recordId) {
         log.info("[云端录像] 添加收藏，app={}，stream={},mediaServerId={},startTime={},endTime={},callId={},recordId={}", app, stream, mediaServerId, startTime, endTime, callId, recordId);
         if (recordId != null) {
+            derivedResourceAccessAuthorizer.requireRecord(
+                    CLOUD_RECORD_COLLECT_PERMISSION, recordId);
             return cloudRecordService.changeCollectById(recordId, true);
         } else {
-            return cloudRecordService.changeCollect(true, app, stream, mediaServerId, startTime, endTime, callId);
+            return cloudRecordService.changeCollect(
+                    true, app, stream, mediaServerId, startTime, endTime, callId,
+                    authorizationFacade.resolveVideoScopeQuery(
+                            CLOUD_RECORD_COLLECT_PERMISSION));
         }
     }
 
     @ResponseBody
+    @PreAuthorize("@authz.check('video:cloud-record:collect')")
     @GetMapping("/collect/delete")
     @Operation(summary = "移除收藏")
     @Parameter(name = "app", description = "应用名", required = false)
@@ -236,21 +298,32 @@ public class CloudRecordController {
     public int deleteCollect(@RequestParam(required = false) String app, @RequestParam(required = false) String stream, @RequestParam(required = false) String mediaServerId, @RequestParam(required = false) String startTime, @RequestParam(required = false) String endTime, @RequestParam(required = false) String callId, @RequestParam(required = false) Integer recordId) {
         log.info("[云端录像] 移除收藏，app={}，stream={},mediaServerId={},startTime={},endTime={},callId={},recordId={}", app, stream, mediaServerId, startTime, endTime, callId, recordId);
         if (recordId != null) {
+            derivedResourceAccessAuthorizer.requireRecord(
+                    CLOUD_RECORD_COLLECT_PERMISSION, recordId);
             return cloudRecordService.changeCollectById(recordId, false);
         } else {
-            return cloudRecordService.changeCollect(false, app, stream, mediaServerId, startTime, endTime, callId);
+            return cloudRecordService.changeCollect(
+                    false, app, stream, mediaServerId, startTime, endTime, callId,
+                    authorizationFacade.resolveVideoScopeQuery(
+                            CLOUD_RECORD_COLLECT_PERMISSION));
         }
     }
 
     @ResponseBody
+    @PreAuthorize("@authz.check('video:cloud-record:download')")
     @GetMapping("/play/path")
     @Operation(summary = "获取播放地址")
     @Parameter(name = "recordId", description = "录像记录的ID", required = true)
-    public DownloadFileInfo getPlayUrlPath(@RequestParam(required = true) Integer recordId) {
-        return cloudRecordService.getPlayUrlPath(recordId);
+    public DownloadTicketResponse getPlayUrlPath(
+            @RequestParam(required = true) Integer recordId) {
+        derivedResourceAccessAuthorizer.requireRecord(
+                CLOUD_RECORD_DOWNLOAD_PERMISSION, recordId);
+        return downloadTicketService.issue(DownloadTicketRequest.single(
+                DownloadResourceType.CLOUD_RECORD, recordId));
     }
 
     @ResponseBody
+    @PreAuthorize("@authz.check('video:cloud-record:play')")
     @GetMapping("/loadRecord")
     @Operation(summary = "加载录像文件形成播放地址")
     @Parameter(name = "app", description = "应用名", required = true)
@@ -262,6 +335,8 @@ public class CloudRecordController {
             @RequestParam(required = true) String stream,
             @RequestParam(required = true) int cloudRecordId
             ) {
+        derivedResourceAccessAuthorizer.requireRecord(
+                CLOUD_RECORD_PLAY_PERMISSION, cloudRecordId);
         DeferredResult<WVPResult<StreamContent>> result = new DeferredResult<>();
 
         result.onTimeout(()->{
@@ -294,7 +369,10 @@ public class CloudRecordController {
                     if (!org.springframework.util.ObjectUtils.isEmpty(streamInfo.getMediaServer().getTranscodeSuffix()) && !"null".equalsIgnoreCase(streamInfo.getMediaServer().getTranscodeSuffix())) {
                         streamInfo.setStream(streamInfo.getStream() + "_" + streamInfo.getMediaServer().getTranscodeSuffix());
                     }
-                    wvpResult.setData(new StreamContent(streamInfo));
+                    wvpResult.setData(playableStreamService.publish(
+                            streamInfo,
+                            VideoResourceType.CLOUD_RECORD,
+                            cloudRecordId));
                 }else {
                     wvpResult.setCode(code);
                     wvpResult.setMsg(msg);
@@ -311,6 +389,7 @@ public class CloudRecordController {
     }
 
     @ResponseBody
+    @PreAuthorize("@authz.check('video:cloud-record:play')")
     @GetMapping("/seek")
     @Operation(summary = "定位录像播放到制定位置")
     @Parameter(name = "mediaServerId", description = "使用的节点Id", required = true)
@@ -327,10 +406,13 @@ public class CloudRecordController {
         if (schema == null) {
             schema = "ts";
         }
+        channelAccessAuthorizer.requireAppStream(
+                CLOUD_RECORD_PLAY_PERMISSION, app, stream);
         cloudRecordService.seekRecord(mediaServerId, app, stream, seek, schema);
     }
 
     @ResponseBody
+    @PreAuthorize("@authz.check('video:cloud-record:play')")
     @GetMapping("/speed")
     @Operation(summary = "设置录像播放速度")
     @Parameter(name = "mediaServerId", description = "使用的节点Id", required = true)
@@ -347,260 +429,50 @@ public class CloudRecordController {
         if (schema == null) {
             schema = "ts";
         }
-
+        channelAccessAuthorizer.requireAppStream(
+                CLOUD_RECORD_PLAY_PERMISSION, app, stream);
         cloudRecordService.setRecordSpeed(mediaServerId, app, stream, speed, schema);
     }
 
     @ResponseBody
+    @PreAuthorize("@authz.check('video:cloud-record:remove')")
     @DeleteMapping("/delete")
     @Operation(summary = "删除录像文件")
     @Parameter(name = "ids", description = "文件ID集合", required = true)
     public void deleteFileByIds(@RequestBody BatchRemoveParam ids) {
+        derivedResourceAccessAuthorizer.requireAllRecords(
+                CLOUD_RECORD_REMOVE_PERMISSION, ids.getIds());
         cloudRecordService.deleteFileByIds(ids.getIds());
     }
 
     @ResponseBody
+    @PreAuthorize("@authz.check('video:cloud-record:download')")
     @GetMapping("/download/zip")
-    public void downloadZipFileFromUrl(HttpServletResponse response, Integer[] ids) {
-        String idsStr = StringUtils.arrayToCommaDelimitedString(ids);
-        log.info("[下载指定录像文件的压缩包] 查询 ids->{}", idsStr);
-        List<Integer> arrayList = new ArrayList<>(List.of(ids));
-        List<CloudRecordUrl> cloudRecordItemList = cloudRecordService.getUrlListByIds(arrayList);
-        if (ObjectUtils.isEmpty(cloudRecordItemList)) {
-            log.warn("[下载指定录像文件的压缩包] 未找到录像文件，ids->{}", idsStr);
-            return;
+    public DownloadTicketResponse downloadZipFileFromUrl(Integer[] ids) {
+        if (ids == null || ids.length == 0) {
+            throw new IllegalArgumentException("录像 ID 集合不能为空");
         }
-
-        // 设置响应头
-        response.setContentType("application/zip");
-        response.setCharacterEncoding("UTF-8");
-        response.setHeader("Content-Disposition", "attachment; filename=record_" + System.currentTimeMillis() + ".zip");
-
-        try (ZipOutputStream zos = new ZipOutputStream(response.getOutputStream())) {
-            for (CloudRecordUrl recordUrl : cloudRecordItemList) {
-                try {
-                    zos.putNextEntry(new ZipEntry(recordUrl.getFileName()));
-                    boolean downloadSuccess = HttpUtils.downLoadFile(recordUrl.getDownloadUrl(), zos);
-                    if (!downloadSuccess) {
-                        log.warn("[下载指定录像文件的压缩包] 下载文件失败: {}", recordUrl.getDownloadUrl());
-                        zos.closeEntry();
-                        continue;
-                    }
-
-//                    try (FileInputStream fis = new FileInputStream(recordUrl.getFilePath())) {
-//                        byte[] buf = new byte[8192]; // 8KB 缓冲区，提高性能
-//                        int len;
-//                        while ((len = fis.read(buf)) != -1) {
-//                            zos.write(buf, 0, len);
-//                        }
-//                    }
-
-                    zos.closeEntry();
-                } catch (Exception e) {
-                    log.error("[下载指定录像文件的压缩包] 处理文件失败: {}, 错误: {}", recordUrl.getFileName(), e.getMessage());
-                    // 继续处理下一个文件
-                }
-            }
-        } catch (IOException e) {
-            log.error("[下载指定录像文件的压缩包] 创建压缩包失败，查询 ids->{}", ids, e);
-        }
+        List<Integer> arrayList = java.util.Arrays.asList(ids);
+        derivedResourceAccessAuthorizer.requireAllRecords(
+                CLOUD_RECORD_DOWNLOAD_PERMISSION, arrayList);
+        return downloadTicketService.issue(DownloadTicketRequest.batch(
+                DownloadResourceType.CLOUD_RECORD_ZIP,
+                arrayList.stream().map(Integer::longValue).toList()));
     }
 
 
 
 
 
-    /************************* 以下这些接口只适合wvp和zlm部署在同一台服务器的情况，且wvp只有一个zlm节点的情况 ***************************************/
-
-    /**
-     * 下载指定录像文件的压缩包
-     * @param query 检索内容
-     * @param app 应用名
-     * @param stream 流ID
-     * @param startTime 开始时间(yyyy-MM-dd HH:mm:ss)
-     * @param endTime 结束时间(yyyy-MM-dd HH:mm:ss)
-     * @param mediaServerId 流媒体ID，置空则查询全部流媒体
-     * @param callId 每次录像的唯一标识，置空则查询全部流媒体
-     * @param ids 指定的Id
-     */
     @ResponseBody
+    @PreAuthorize("@authz.check('video:cloud-record:download')")
     @GetMapping("/zip")
-    public void downloadZipFile(HttpServletResponse response, @RequestParam(required = false) String query, @RequestParam(required = false) String app, @RequestParam(required = false) String stream, @RequestParam(required = false) String startTime, @RequestParam(required = false) String endTime, @RequestParam(required = false) String mediaServerId, @RequestParam(required = false) String callId, @RequestParam(required = false) List<Integer> ids
-
-    ) {
-        log.info("[下载指定录像文件的压缩包] 查询 app->{}, stream->{}, mediaServerId->{}, startTime->{}, endTime->{}, callId->{}", app, stream, mediaServerId, startTime, endTime, callId);
-
-        List<MediaServer> mediaServers;
-        if (!ObjectUtils.isEmpty(mediaServerId)) {
-            mediaServers = new ArrayList<>();
-            MediaServer mediaServer = mediaServerService.getOne(mediaServerId);
-            if (mediaServer == null) {
-                throw new ControllerException(ErrorCode.ERROR100.getCode(), "未找到流媒体: " + mediaServerId);
-            }
-            mediaServers.add(mediaServer);
-        } else {
-            mediaServers = mediaServerService.getAll();
-        }
-        if (mediaServers.isEmpty()) {
-            throw new ControllerException(ErrorCode.ERROR100.getCode(), "当前无流媒体");
-        }
-        if (query != null && ObjectUtils.isEmpty(query.trim())) {
-            query = null;
-        }
-        if (app != null && ObjectUtils.isEmpty(app.trim())) {
-            app = null;
-        }
-        if (stream != null && ObjectUtils.isEmpty(stream.trim())) {
-            stream = null;
-        }
-        if (startTime != null && ObjectUtils.isEmpty(startTime.trim())) {
-            startTime = null;
-        }
-        if (endTime != null && ObjectUtils.isEmpty(endTime.trim())) {
-            endTime = null;
-        }
-        if (callId != null && ObjectUtils.isEmpty(callId.trim())) {
-            callId = null;
-        }
-        // 设置响应头
-        response.setContentType("application/zip");
-        response.setCharacterEncoding("UTF-8");
-        if (stream != null && callId != null) {
-            response.setHeader("Content-Disposition", "attachment;filename=" + stream + "_" + callId + ".zip");
-        } else {
-            response.setHeader("Content-Disposition", "attachment;filename=cloud_record_" + System.currentTimeMillis() + ".zip");
-        }
-        List<CloudRecordItem> cloudRecordItemList = cloudRecordService.getAllList(query, app, stream, startTime, endTime, mediaServers, callId, ids);
-        if (ObjectUtils.isEmpty(cloudRecordItemList)) {
-            return;
-        }
-        try (ZipOutputStream zos = new ZipOutputStream(response.getOutputStream())) {
-            for (CloudRecordItem cloudRecordItem : cloudRecordItemList) {
-                try {
-                    String fileName = DateUtil.timestampMsToUrlToyyyy_MM_dd_HH_mm_ss((long)cloudRecordItem.getStartTime()) + ".mp4";
-                    zos.putNextEntry(new ZipEntry(fileName));
-
-                    File file = new File(cloudRecordItem.getFilePath());
-                    if (!file.exists() || file.isDirectory()) {
-                        log.warn("[下载指定录像文件的压缩包] 文件不存在或为目录: {}", cloudRecordItem.getFilePath());
-                        zos.closeEntry();
-                        continue;
-                    }
-
-                    try (FileInputStream fis = new FileInputStream(cloudRecordItem.getFilePath())) {
-                        byte[] buf = new byte[8192]; // 8KB 缓冲区，提高性能
-                        int len;
-                        while ((len = fis.read(buf)) != -1) {
-                            zos.write(buf, 0, len);
-                        }
-                    }
-                    zos.closeEntry();
-                    log.debug("[下载指定录像文件的压缩包] 成功添加文件: {}", fileName);
-                } catch (Exception e) {
-                    log.error("[下载指定录像文件的压缩包] 处理文件失败: {}, 错误: {}", cloudRecordItem.getFilePath(), e.getMessage());
-                    // 继续处理下一个文件
-                }
-            }
-        } catch (IOException e) {
-            log.error("[下载指定录像文件的压缩包] 失败： 查询 app->{}, stream->{}, mediaServerId->{}, startTime->{}, endTime->{}, callId->{}", app, stream, mediaServerId, startTime, endTime, callId, e);
-        }
-    }
-
-    /**
-     *
-     * @param query 检索内容
-     * @param app 应用名
-     * @param stream 流ID
-     * @param startTime 开始时间(yyyy-MM-dd HH:mm:ss)
-     * @param endTime 结束时间(yyyy-MM-dd HH:mm:ss)
-     * @param mediaServerId 流媒体ID，置空则查询全部流媒体
-     * @param callId 每次录像的唯一标识，置空则查询全部流媒体
-     * @param remoteHost 拼接播放地址时使用的远程地址
-     */
-    @ResponseBody
-    @GetMapping("/list-url")
-    @Operation(summary = "分页查询云端录像", security = @SecurityRequirement(name = JwtUtils.HEADER))
-    @Parameter(name = "query", description = "检索内容", required = false)
-    @Parameter(name = "app", description = "应用名", required = false)
-    @Parameter(name = "stream", description = "流ID", required = false)
-    @Parameter(name = "page", description = "当前页", required = true)
-    @Parameter(name = "count", description = "每页查询数量", required = true)
-    @Parameter(name = "startTime", description = "开始时间(yyyy-MM-dd HH:mm:ss)", required = false)
-    @Parameter(name = "endTime", description = "结束时间(yyyy-MM-dd HH:mm:ss)", required = false)
-    @Parameter(name = "mediaServerId", description = "流媒体ID，置空则查询全部流媒体", required = false)
-    @Parameter(name = "callId", description = "每次录像的唯一标识，置空则查询全部流媒体", required = false)
-    public PageInfo<CloudRecordUrl> getListWithUrl(HttpServletRequest request, @RequestParam(required = false) String query, @RequestParam(required = false) String app, @RequestParam(required = false) String stream, @RequestParam int page, @RequestParam int count, @RequestParam(required = false) String startTime, @RequestParam(required = false) String endTime, @RequestParam(required = false) String mediaServerId, @RequestParam(required = false) String callId, @RequestParam(required = false) String remoteHost
-
-    ) {
-        log.info("[云端录像] 查询URL app->{}, stream->{}, mediaServerId->{}, page->{}, count->{}, startTime->{}, endTime->{}, callId->{}", app, stream, mediaServerId, page, count, startTime, endTime, callId);
-
-        List<MediaServer> mediaServers;
-        if (!ObjectUtils.isEmpty(mediaServerId)) {
-            mediaServers = new ArrayList<>();
-            MediaServer mediaServer = mediaServerService.getOne(mediaServerId);
-            if (mediaServer == null) {
-                throw new ControllerException(ErrorCode.ERROR100.getCode(), "未找到流媒体: " + mediaServerId);
-            }
-            mediaServers.add(mediaServer);
-        } else {
-            mediaServers = null;
-        }
-        if (query != null && ObjectUtils.isEmpty(query.trim())) {
-            query = null;
-        }
-        if (app != null && ObjectUtils.isEmpty(app.trim())) {
-            app = null;
-        }
-        if (stream != null && ObjectUtils.isEmpty(stream.trim())) {
-            stream = null;
-        }
-        if (startTime != null && ObjectUtils.isEmpty(startTime.trim())) {
-            startTime = null;
-        }
-        if (endTime != null && ObjectUtils.isEmpty(endTime.trim())) {
-            endTime = null;
-        }
-        if (callId != null && ObjectUtils.isEmpty(callId.trim())) {
-            callId = null;
-        }
-        MediaServer mediaServer = mediaServerService.getDefaultMediaServer();
-        if (mediaServer == null) {
-            throw new ControllerException(ErrorCode.ERROR100.getCode(), "未找到流媒体节点");
-        }
-        if (remoteHost == null) {
-            remoteHost = request.getScheme() + "://" + request.getLocalAddr() + ":" + (request.getScheme().equals("https") ? mediaServer.getHttpSSlPort() : mediaServer.getHttpPort());
-        }
-        PageInfo<CloudRecordItem> cloudRecordItemPageInfo = cloudRecordService.getList(page, count, query, app, stream, startTime, endTime, mediaServers, callId, null);
-        PageInfo<CloudRecordUrl> cloudRecordUrlPageInfo = new PageInfo<>();
-        if (!ObjectUtils.isEmpty(cloudRecordItemPageInfo)) {
-            cloudRecordUrlPageInfo.setPageNum(cloudRecordItemPageInfo.getPageNum());
-            cloudRecordUrlPageInfo.setPageSize(cloudRecordItemPageInfo.getPageSize());
-            cloudRecordUrlPageInfo.setSize(cloudRecordItemPageInfo.getSize());
-            cloudRecordUrlPageInfo.setEndRow(cloudRecordItemPageInfo.getEndRow());
-            cloudRecordUrlPageInfo.setStartRow(cloudRecordItemPageInfo.getStartRow());
-            cloudRecordUrlPageInfo.setPages(cloudRecordItemPageInfo.getPages());
-            cloudRecordUrlPageInfo.setPrePage(cloudRecordItemPageInfo.getPrePage());
-            cloudRecordUrlPageInfo.setNextPage(cloudRecordItemPageInfo.getNextPage());
-            cloudRecordUrlPageInfo.setIsFirstPage(cloudRecordItemPageInfo.isIsFirstPage());
-            cloudRecordUrlPageInfo.setIsLastPage(cloudRecordItemPageInfo.isIsLastPage());
-            cloudRecordUrlPageInfo.setHasPreviousPage(cloudRecordItemPageInfo.isHasPreviousPage());
-            cloudRecordUrlPageInfo.setHasNextPage(cloudRecordItemPageInfo.isHasNextPage());
-            cloudRecordUrlPageInfo.setNavigatePages(cloudRecordItemPageInfo.getNavigatePages());
-            cloudRecordUrlPageInfo.setNavigateFirstPage(cloudRecordItemPageInfo.getNavigateFirstPage());
-            cloudRecordUrlPageInfo.setNavigateLastPage(cloudRecordItemPageInfo.getNavigateLastPage());
-            cloudRecordUrlPageInfo.setNavigatepageNums(cloudRecordItemPageInfo.getNavigatepageNums());
-            cloudRecordUrlPageInfo.setTotal(cloudRecordItemPageInfo.getTotal());
-            List<CloudRecordUrl> cloudRecordUrlList = new ArrayList<>(cloudRecordItemPageInfo.getList().size());
-            List<CloudRecordItem> cloudRecordItemList = cloudRecordItemPageInfo.getList();
-            for (CloudRecordItem cloudRecordItem : cloudRecordItemList) {
-                CloudRecordUrl cloudRecordUrl = new CloudRecordUrl();
-                cloudRecordUrl.setId(cloudRecordItem.getId());
-                cloudRecordUrl.setDownloadUrl(remoteHost + "/index/api/downloadFile?file_path=" + cloudRecordItem.getFilePath() + "&save_name=" + cloudRecordItem.getStream() + "_" + cloudRecordItem.getCallId() + "_" + DateUtil.timestampMsToUrlToyyyy_MM_dd_HH_mm_ss((long)cloudRecordItem.getStartTime()));
-                cloudRecordUrl.setPlayUrl(remoteHost + "/index/api/downloadFile?file_path=" + cloudRecordItem.getFilePath());
-                cloudRecordUrlList.add(cloudRecordUrl);
-            }
-            cloudRecordUrlPageInfo.setList(cloudRecordUrlList);
-        }
-        return cloudRecordUrlPageInfo;
+    public DownloadTicketResponse downloadZipFile(
+            @RequestParam List<Integer> ids) {
+        derivedResourceAccessAuthorizer.requireAllRecords(
+                CLOUD_RECORD_DOWNLOAD_PERMISSION, ids);
+        return downloadTicketService.issue(DownloadTicketRequest.batch(
+                DownloadResourceType.CLOUD_RECORD_ZIP,
+                ids.stream().map(Integer::longValue).toList()));
     }
 }

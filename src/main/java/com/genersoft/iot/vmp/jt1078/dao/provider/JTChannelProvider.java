@@ -1,5 +1,7 @@
 package com.genersoft.iot.vmp.jt1078.dao.provider;
 
+import com.genersoft.iot.vmp.authorization.video.VideoListScopeSql;
+
 import java.util.Map;
 
 public class JTChannelProvider {
@@ -23,13 +25,24 @@ public class JTChannelProvider {
         return sqlBuild.toString();
     }
     public String selectAll(Map<String, Object> params ){
+        return buildSelectAll(params, true);
+    }
+
+    public String selectAllForInternalMaintenance(Map<String, Object> params) {
+        return buildSelectAll(params, false);
+    }
+
+    private String buildSelectAll(Map<String, Object> params, boolean scoped) {
         StringBuilder sqlBuild = new StringBuilder();
         sqlBuild.append(BASE_SQL);
         sqlBuild.append(" WHERE jc.terminal_db_id = #{terminalDbId} ");
         if (params.get("query") != null) {
             sqlBuild.append(" AND jc.name LIKE concat('%',#{query},'%')");
         }
+        if (scoped) {
+            VideoListScopeSql.appendJtChannelScope(sqlBuild, params, "jc");
+        }
         sqlBuild.append(" ORDER BY jc.channel_id ");
-        return sqlBuild.toString();
+        return VideoListScopeSql.asScript(sqlBuild.toString());
     }
 }

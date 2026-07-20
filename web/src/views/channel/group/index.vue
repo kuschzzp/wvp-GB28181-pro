@@ -147,7 +147,6 @@ export default {
       count: 15,
       total: 0,
       loading: false,
-      loadSnap: {},
       groupDeviceId: '',
       groupId: '',
       businessGroup: '',
@@ -275,10 +274,6 @@ export default {
         .finally(() => {
           this.loading = false
         })
-    },
-    getSnap: function(row) {
-      const baseUrl = window.baseUrl ? window.baseUrl : ''
-      return ((process.env.NODE_ENV === 'development') ? process.env.VUE_APP_BASE_API : baseUrl) + '/api/device/query/snap/' + this.deviceId + '/' + row.deviceId
     },
     search: function() {
       this.currentPage = 1

@@ -112,6 +112,7 @@ create table IF NOT EXISTS wvp_device_channel
     sub_count                    integer,
     stream_id                    character varying(255),
     has_audio                    bool default false,
+    enable_broadcast             integer default 0,
     gps_time                     character varying(50),
     stream_identification        character varying(50),
     channel_type                 int  default 0        not null,

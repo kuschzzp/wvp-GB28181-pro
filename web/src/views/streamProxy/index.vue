@@ -43,7 +43,7 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button icon="el-icon-plus" size="mini" style="margin-right: 1rem;" type="primary" @click="addStreamProxy">添加代理</el-button>
+          <el-button v-hasPermi="['video:proxy:add']" icon="el-icon-plus" size="mini" style="margin-right: 1rem;" type="primary" @click="addStreamProxy">添加代理</el-button>
         </el-form-item>
         <el-form-item style="float: right;">
           <el-button icon="el-icon-refresh-right" circle @click="refresh()" />
@@ -94,17 +94,17 @@
         <el-table-column prop="createTime" label="创建时间" min-width="150" show-overflow-tooltip />
         <el-table-column label="操作" width="370" fixed="right">
           <template v-slot:default="scope">
-            <el-button size="medium" :loading="scope.row.playLoading" icon="el-icon-video-play" type="text" @click="play(scope.row)">播放</el-button>
+            <el-button v-hasPermi="['video:proxy:play']" size="medium" :loading="scope.row.playLoading" icon="el-icon-video-play" type="text" @click="play(scope.row)">播放</el-button>
             <el-divider direction="vertical" />
-            <el-button v-if="scope.row.pulling" size="medium" icon="el-icon-switch-button" style="color: #f56c6c" type="text" @click="stopPlay(scope.row)">停止</el-button>
+            <el-button v-if="scope.row.pulling" v-hasPermi="['video:proxy:stop']" size="medium" icon="el-icon-switch-button" style="color: #f56c6c" type="text" @click="stopPlay(scope.row)">停止</el-button>
             <el-divider v-if="scope.row.pulling" direction="vertical" />
-            <el-button size="medium" icon="el-icon-edit" type="text" @click="edit(scope.row)">
+            <el-button v-hasPermi="['video:proxy:edit']" size="medium" icon="el-icon-edit" type="text" @click="edit(scope.row)">
               编辑
             </el-button>
             <el-divider direction="vertical" />
-            <el-button size="medium" icon="el-icon-cloudy" type="text" @click="queryCloudRecords(scope.row)">云端录像</el-button>
+            <el-button v-hasPermi="['video:cloud-record:list']" size="medium" icon="el-icon-cloudy" type="text" @click="queryCloudRecords(scope.row)">云端录像</el-button>
             <el-divider direction="vertical" />
-            <el-button size="medium" icon="el-icon-delete" type="text" style="color: #f56c6c" @click="deleteStreamProxy(scope.row)">删除</el-button>
+            <el-button v-hasPermi="['video:proxy:remove']" size="medium" icon="el-icon-delete" type="text" style="color: #f56c6c" @click="deleteStreamProxy(scope.row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -234,6 +234,7 @@ export default {
       this.streamProxy = null
     },
     play: function(row) {
+      if (!this.$auth.hasPermi(['video:proxy:play'])) return
       row.playLoading = true
       this.$store.dispatch('streamProxy/play', row.id)
         .then((data) => {
@@ -251,6 +252,7 @@ export default {
         })
     },
     stopPlay: function(row) {
+      if (!this.$auth.hasPermi(['video:proxy:stop'])) return
       this.$store.dispatch('streamProxy/stopPlay', row.id)
         .then(() => {
           this.getStreamProxyList()
@@ -264,6 +266,7 @@ export default {
         })
     },
     queryCloudRecords: function(row) {
+      if (!this.$auth.hasPermi(['video:cloud-record:list'])) return
       this.$router.push(`/cloudRecord/detail/${row.app}/${row.stream}`)
     },
     deleteStreamProxy: function(row) {

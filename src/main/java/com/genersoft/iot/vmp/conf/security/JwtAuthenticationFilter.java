@@ -1,114 +1,150 @@
 package com.genersoft.iot.vmp.conf.security;
 
+import com.genersoft.iot.vmp.auth.model.AuthPrincipal;
+import com.genersoft.iot.vmp.auth.model.PrincipalType;
+import com.genersoft.iot.vmp.auth.model.VerifiedAccessToken;
+import com.genersoft.iot.vmp.auth.repository.PermissionRepository;
+import com.genersoft.iot.vmp.auth.security.InvalidAccessTokenException;
+import com.genersoft.iot.vmp.auth.service.PermissionService;
+import com.genersoft.iot.vmp.auth.service.TokenRevocationService;
+import com.genersoft.iot.vmp.auth.service.TokenVersionService;
 import com.genersoft.iot.vmp.conf.UserSetting;
-import com.genersoft.iot.vmp.conf.security.dto.JwtUser;
-import com.genersoft.iot.vmp.storager.dao.dto.Role;
+import com.genersoft.iot.vmp.service.IUserService;
 import com.genersoft.iot.vmp.storager.dao.dto.User;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-import org.springframework.web.util.ContentCachingRequestWrapper;
 
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.Set;
 
-/**
- * jwt token 过滤器
- */
-
-@Slf4j
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private final static String WSHeader = "sec-websocket-protocol";
+    private final JwtUtils jwtUtils;
+    private final TokenVersionService tokenVersionService;
+    private final TokenRevocationService tokenRevocationService;
+    private final IUserService userService;
+    private final PermissionRepository permissionRepository;
+    private final PermissionService permissionService;
+    private final UserSetting userSetting;
+    private final AuthenticationEntryPoint authenticationEntryPoint;
 
-
-    @Autowired
-    private UserSetting userSetting;
-
+    public JwtAuthenticationFilter(
+            JwtUtils jwtUtils,
+            TokenVersionService tokenVersionService,
+            TokenRevocationService tokenRevocationService,
+            IUserService userService,
+            PermissionRepository permissionRepository,
+            PermissionService permissionService,
+            UserSetting userSetting,
+            AnonymousAuthenticationEntryPoint authenticationEntryPoint) {
+        this.jwtUtils = jwtUtils;
+        this.tokenVersionService = tokenVersionService;
+        this.tokenRevocationService = tokenRevocationService;
+        this.userService = userService;
+        this.permissionRepository = permissionRepository;
+        this.permissionService = permissionService;
+        this.userSetting = userSetting;
+        this.authenticationEntryPoint = authenticationEntryPoint;
+    }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest servletRequest, HttpServletResponse response, FilterChain chain) throws IOException, ServletException {
-        ContentCachingRequestWrapper request = new ContentCachingRequestWrapper(servletRequest);
-        // 忽略登录请求的token验证
-        String requestURI = request.getRequestURI();
-        if ((requestURI.startsWith("/doc.html") || requestURI.startsWith("/swagger-ui")  ) && !userSetting.getDocEnable()) {
+    protected void doFilterInternal(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain chain) throws IOException, ServletException {
+        if (isDisabledDocumentationRequest(request)) {
             response.setStatus(HttpServletResponse.SC_NOT_FOUND);
             return;
         }
 
-        if (requestURI.equalsIgnoreCase("/api/user/login")) {
+        if (hasText(request.getHeader(JwtUtils.HEADER))
+                && hasText(request.getHeader(JwtUtils.API_KEY_HEADER))) {
+            SecurityContextHolder.clearContext();
+            authenticationEntryPoint.commence(
+                    request,
+                    response,
+                    new InvalidAccessTokenException("不能同时提供 access-token 和 api-key"));
+            return;
+        }
+
+        String tokenValue = request.getHeader(JwtUtils.HEADER);
+        if (tokenValue == null || tokenValue.isBlank()) {
             chain.doFilter(request, response);
             return;
         }
 
-        if (!userSetting.getInterfaceAuthentication()) {
-            UsernamePasswordAuthenticationToken token = new UsernamePasswordAuthenticationToken(null, null, new ArrayList<>() );
-            SecurityContextHolder.getContext().setAuthentication(token);
-            chain.doFilter(request, response);
+        try {
+            authenticate(tokenValue);
+        } catch (RuntimeException exception) {
+            SecurityContextHolder.clearContext();
+            InvalidAccessTokenException authenticationException = exception instanceof InvalidAccessTokenException invalid
+                    ? invalid
+                    : new InvalidAccessTokenException("访问令牌校验失败", exception);
+            authenticationEntryPoint.commence(request, response, authenticationException);
             return;
         }
-
-        String jwt = request.getHeader(JwtUtils.getHeader());
-        // 这里如果没有jwt，继续往后走，因为后面还有鉴权管理器等去判断是否拥有身份凭证，所以是可以放行的
-        // 没有jwt相当于匿名访问，若有一些接口是需要权限的，则不能访问这些接口
-
-        // websocket 鉴权信息默认存储在这里
-        String secWebsocketProtocolHeader = request.getHeader(WSHeader);
-        if (StringUtils.isBlank(jwt)) {
-
-            if (secWebsocketProtocolHeader != null) {
-                jwt = secWebsocketProtocolHeader;
-                response.setHeader(WSHeader, secWebsocketProtocolHeader);
-            }else {
-                jwt = request.getParameter(JwtUtils.getHeader());
-            }
-            if (StringUtils.isBlank(jwt)) {
-                jwt = request.getHeader(JwtUtils.getApiKeyHeader());
-                if (StringUtils.isBlank(jwt)) {
-                    chain.doFilter(request, response);
-                    return;
-                }
-            }
-        }
-
-        JwtUser jwtUser = JwtUtils.verifyToken(jwt);
-        String username = jwtUser.getUserName();
-        // TODO 处理各个状态
-        switch (jwtUser.getStatus()){
-            case EXPIRED:
-                response.setStatus(401);
-                chain.doFilter(request, response);
-                // 异常
-                return;
-            case EXCEPTION:
-                // 过期
-                response.setStatus(400);
-                chain.doFilter(request, response);
-                return;
-            case EXPIRING_SOON:
-                // 即将过期
-//                return;
-            default:
-        }
-        // 构建UsernamePasswordAuthenticationToken,这里密码为null，是因为提供了正确的JWT,实现自动登录
-        User user = new User();
-        user.setId(jwtUser.getUserId());
-        user.setUsername(jwtUser.getUserName());
-        user.setPassword(jwtUser.getPassword());
-        Role role = new Role();
-        role.setId(jwtUser.getRoleId());
-        user.setRole(role);
-        UsernamePasswordAuthenticationToken token = new UsernamePasswordAuthenticationToken(user, jwtUser.getPassword(), new ArrayList<>() );
-        SecurityContextHolder.getContext().setAuthentication(token);
         chain.doFilter(request, response);
+    }
+
+    private void authenticate(String tokenValue) {
+        VerifiedAccessToken token = jwtUtils.verifyAccessToken(tokenValue);
+        if (tokenRevocationService.isRevoked(token.jti())) {
+            throw new InvalidAccessTokenException("访问令牌已退出");
+        }
+        if (!tokenVersionService.matches(token.userId(), token.tokenVersion())) {
+            throw new InvalidAccessTokenException("访问令牌版本已失效");
+        }
+        User user = requireActiveUser(token.userId());
+        Set<Long> roleIds = Set.copyOf(permissionRepository.findEnabledRoleIds(user.getId()));
+        Set<String> permissions = permissionService.resolvePermissions(user.getId(), token.tokenVersion());
+        AuthPrincipal principal = new AuthPrincipal(
+                PrincipalType.USER,
+                user.getId(),
+                user.getId(),
+                user.getUsername(),
+                user.getDeptId(),
+                roleIds,
+                token.tokenVersion(),
+                permissionRepository.isSystemUser(user.getId()),
+                permissions);
+        UsernamePasswordAuthenticationToken authentication =
+                UsernamePasswordAuthenticationToken.authenticated(
+                        principal,
+                        null,
+                        principal.authorities());
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(authentication);
+        SecurityContextHolder.setContext(context);
+    }
+
+    private User requireActiveUser(long userId) {
+        User user = userService.getUserById(userId);
+        if (user == null || user.isDeleted() || user.getStatus() != 0 || user.isLocked()) {
+            throw new InvalidAccessTokenException("用户状态已失效");
+        }
+        return user;
+    }
+
+    private boolean isDisabledDocumentationRequest(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        return !Boolean.TRUE.equals(userSetting.getDocEnable())
+                && (uri.startsWith("/doc.html")
+                || uri.startsWith("/swagger-ui")
+                || uri.startsWith("/swagger-resources")
+                || uri.startsWith("/v3/api-docs")
+                || uri.startsWith("/webjars/"));
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

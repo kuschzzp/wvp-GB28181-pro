@@ -6,3 +6,30 @@ spring:
       enabled: true
   profiles:
     active: 274-dev
+
+authorization:
+  mode: audit
+  allow-url-token-compatibility: false
+  media:
+    legacy-response-enabled: false
+    legacy-response-sunset: 2026-10-01T00:00:00Z
+    hook-secret-pepper: ${MEDIA_HOOK_SECRET_PEPPER:}
+    hook-replay-window: 2s
+    hook-timestamp-skew: 2m
+    hook-nonce-ttl: 5m
+    # ABL networkType 的含义由部署环境显式配置，禁止猜测默认协议。
+    abl-schema-by-network-type: {}
+    download:
+      ticket-ttl: 2m
+      max-batch-size: 100
+      snapshot-root: ${WVP_SNAPSHOT_ROOT:snap}
+      accel-root: ${MEDIA_DOWNLOAD_ACCEL_ROOT:}
+      accel-internal-prefix: /_protected_media/
+  principal-cache-ttl: 5m
+  legacy-md5-login-enabled: false
+  legacy-md5-login-sunset: 2026-10-01T00:00:00Z
+  api-key-pepper: ${API_KEY_PEPPER:}
+  legacy-api-key-enabled: false
+  legacy-api-key-sunset: 2026-10-01T00:00:00Z
+  # expand/audit 阶段保持 true；执行角色表 contract 前必须切换为 false。
+  legacy-role-dual-write-enabled: true

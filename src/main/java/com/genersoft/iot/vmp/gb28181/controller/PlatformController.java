@@ -1,6 +1,9 @@
 package com.genersoft.iot.vmp.gb28181.controller;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.genersoft.iot.vmp.authorization.AuthorizationFacade;
+import com.genersoft.iot.vmp.authorization.video.GbChannelAccessAuthorizer;
+import com.genersoft.iot.vmp.authorization.video.resolver.VideoResourceNotFoundException;
 import com.genersoft.iot.vmp.conf.SipConfig;
 import com.genersoft.iot.vmp.conf.exception.ControllerException;
 import com.genersoft.iot.vmp.conf.security.JwtUtils;
@@ -20,9 +23,12 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 /**
  * 级联平台管理
@@ -31,10 +37,22 @@ import org.springframework.web.bind.annotation.*;
 @Slf4j
 @RestController
 @RequestMapping("/api/platform")
+@PreAuthorize("@authz.check('video:platform:list')")
 public class PlatformController {
+
+    private static final String PLATFORM_LIST_PERMISSION =
+            "video:platform:list";
+    private static final String PLATFORM_SHARE_PERMISSION =
+            "video:platform:share-channel";
 
     @Autowired
     private IPlatformChannelService platformChannelService;
+
+    @Autowired
+    private AuthorizationFacade authorizationFacade;
+
+    @Autowired
+    private GbChannelAccessAuthorizer channelAccessAuthorizer;
 
     @Autowired
     private SubscribeHolder subscribeHolder;
@@ -47,6 +65,7 @@ public class PlatformController {
 
 
     @Operation(summary = "获取国标服务的配置", security = @SecurityRequirement(name = JwtUtils.HEADER))
+    @PreAuthorize("@authz.check('video:platform:manage')")
     @GetMapping("/server_config")
     public JSONObject serverConfig() {
         JSONObject result = new JSONObject();
@@ -88,6 +107,7 @@ public class PlatformController {
     }
 
     @Operation(summary = "添加上级平台信息", security = @SecurityRequirement(name = JwtUtils.HEADER))
+    @PreAuthorize("@authz.check('video:platform:manage')")
     @PostMapping("/add")
     @ResponseBody
     public void add(@RequestBody Platform platform) {
@@ -132,6 +152,7 @@ public class PlatformController {
     }
 
     @Operation(summary = "更新上级平台信息", security = @SecurityRequirement(name = JwtUtils.HEADER))
+    @PreAuthorize("@authz.check('video:platform:manage')")
     @PostMapping("/update")
     @ResponseBody
     public void updatePlatform(@RequestBody Platform parentPlatform) {
@@ -154,6 +175,7 @@ public class PlatformController {
 
     @Operation(summary = "删除上级平台", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "id", description = "上级平台ID")
+    @PreAuthorize("@authz.check('video:platform:manage')")
     @DeleteMapping("/delete")
     @ResponseBody
     public WVPResult<?> deletePlatform(Integer id) {
@@ -200,10 +222,20 @@ public class PlatformController {
             query = null;
         }
 
-        return platformChannelService.queryChannelList(page, count, query, channelType,  online, platformId, hasShare);
+        return platformChannelService.queryChannelList(
+                page,
+                count,
+                query,
+                channelType,
+                online,
+                platformId,
+                hasShare,
+                authorizationFacade.resolveVideoScopeQuery(
+                        PLATFORM_LIST_PERMISSION));
     }
 
     @Operation(summary = "向上级平台添加国标通道", security = @SecurityRequirement(name = JwtUtils.HEADER))
+    @PreAuthorize("@authz.check('video:platform:share-channel')")
     @PostMapping("/channel/add")
     @ResponseBody
     public void addChannel(@RequestBody UpdateChannelParam param) {
@@ -211,13 +243,17 @@ public class PlatformController {
         if (log.isDebugEnabled()) {
             log.debug("给上级平台添加国标通道API调用");
         }
+        Assert.notNull(param.getPlatformId(), "平台ID不可为空");
         int result = 0;
         if (param.getChannelIds() == null || param.getChannelIds().isEmpty()) {
             if (param.isAll()) {
                 log.info("[国标级联]添加所有通道到上级平台， {}", param.getPlatformId());
+                requireAllPlatformChannels(param.getPlatformId(), false);
                 result = platformChannelService.addAllChannel(param.getPlatformId());
             }
         }else {
+            channelAccessAuthorizer.requireAllChannels(
+                    PLATFORM_SHARE_PERMISSION, param.getChannelIds());
             result = platformChannelService.addChannels(param.getPlatformId(), param.getChannelIds());
         }
         if (result <= 0) {
@@ -226,6 +262,7 @@ public class PlatformController {
     }
 
     @Operation(summary = "从上级平台移除国标通道", security = @SecurityRequirement(name = JwtUtils.HEADER))
+    @PreAuthorize("@authz.check('video:platform:share-channel')")
     @DeleteMapping("/channel/remove")
     @ResponseBody
     public void delChannelForGB(@RequestBody UpdateChannelParam param) {
@@ -233,13 +270,17 @@ public class PlatformController {
         if (log.isDebugEnabled()) {
             log.debug("给上级平台删除国标通道API调用");
         }
+        Assert.notNull(param.getPlatformId(), "平台ID不可为空");
         int result = 0;
         if (param.getChannelIds() == null || param.getChannelIds().isEmpty()) {
             if (param.isAll()) {
                 log.info("[国标级联]移除所有通道，上级平台， {}", param.getPlatformId());
+                requireAllPlatformChannels(param.getPlatformId(), true);
                 result = platformChannelService.removeAllChannel(param.getPlatformId());
             }
         }else {
+            channelAccessAuthorizer.requireAllChannels(
+                    PLATFORM_SHARE_PERMISSION, param.getChannelIds());
             result = platformChannelService.removeChannels(param.getPlatformId(), param.getChannelIds());
         }
         if (result <= 0) {
@@ -249,38 +290,74 @@ public class PlatformController {
 
     @Operation(summary = "推送通道", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "id", description = "平台ID", required = true)
+    @PreAuthorize("@authz.check('video:platform:share-channel')")
     @GetMapping("/channel/push")
     @ResponseBody
     public void pushChannel(Integer id) {
         Assert.notNull(id, "平台ID不可为空");
+        List<Integer> channelIds =
+                platformChannelService.queryChannelIds(id, true);
+        if (!channelIds.isEmpty()) {
+            channelAccessAuthorizer.requireAllChannels(
+                    PLATFORM_SHARE_PERMISSION, channelIds);
+        }
         platformChannelService.pushChannel(id);
     }
 
     @Operation(summary = "添加通道-通过设备", security = @SecurityRequirement(name = JwtUtils.HEADER))
+    @PreAuthorize("@authz.check('video:platform:share-channel')")
     @PostMapping("/channel/device/add")
     @ResponseBody
     public void addChannelByDevice(@RequestBody UpdateChannelParam param) {
         Assert.notNull(param.getPlatformId(), "平台ID不可为空");
         Assert.notNull(param.getDeviceIds(), "设备ID不可为空");
         Assert.notEmpty(param.getDeviceIds(), "设备ID不可为空");
+        channelAccessAuthorizer.requireAllGbDevices(
+                PLATFORM_SHARE_PERMISSION, param.getDeviceIds());
         platformChannelService.addChannelByDevice(param.getPlatformId(), param.getDeviceIds());
     }
 
     @Operation(summary = "移除通道-通过设备", security = @SecurityRequirement(name = JwtUtils.HEADER))
+    @PreAuthorize("@authz.check('video:platform:share-channel')")
     @PostMapping("/channel/device/remove")
     @ResponseBody
     public void removeChannelByDevice(@RequestBody UpdateChannelParam param) {
         Assert.notNull(param.getPlatformId(), "平台ID不可为空");
         Assert.notNull(param.getDeviceIds(), "设备ID不可为空");
         Assert.notEmpty(param.getDeviceIds(), "设备ID不可为空");
+        channelAccessAuthorizer.requireAllGbDevices(
+                PLATFORM_SHARE_PERMISSION, param.getDeviceIds());
         platformChannelService.removeChannelByDevice(param.getPlatformId(), param.getDeviceIds());
     }
 
     @Operation(summary = "自定义共享通道信息", security = @SecurityRequirement(name = JwtUtils.HEADER))
+    @PreAuthorize("@authz.check('video:platform:share-channel')")
     @PostMapping("/channel/custom/update")
     @ResponseBody
     public void updateCustomChannel(@RequestBody PlatformChannel channel) {
         Assert.isTrue(channel.getId() > 0, "共享通道ID必须存在");
+        Assert.isTrue(channel.getPlatformId() > 0, "平台ID必须存在");
+        Integer channelId =
+                platformChannelService.queryChannelIdByPlatformChannelId(
+                        channel.getPlatformId(), channel.getId());
+        if (channelId == null) {
+            throw new VideoResourceNotFoundException(
+                    "平台共享通道不存在");
+        }
+        channelAccessAuthorizer.requireChannel(
+                PLATFORM_SHARE_PERMISSION, channelId);
+        channel.setGbId(channelId);
         platformChannelService.updateCustomChannel(channel);
+    }
+
+    private void requireAllPlatformChannels(
+            Integer platformId, boolean shared) {
+        List<Integer> channelIds =
+                platformChannelService.queryChannelIds(platformId, shared);
+        Assert.notEmpty(
+                channelIds,
+                shared ? "未共享任何通道" : "所有通道已共享");
+        channelAccessAuthorizer.requireAllChannels(
+                PLATFORM_SHARE_PERMISSION, channelIds);
     }
 }

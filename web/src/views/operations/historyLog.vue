@@ -199,26 +199,6 @@ export default {
     loadEnd() {
       this.playerTitle = this.file.fileName
     },
-    deleteRecord() {
-      // TODO
-      const that = this
-      this.$axios({
-        method: 'delete',
-        url: `/record_proxy/api/record/delete`,
-        params: {
-          page: that.currentPage,
-          count: that.count
-        }
-      }).then(function(res) {
-        console.log(res)
-        if (res.data.code === 0) {
-          that.total = res.data.data.total
-          that.fileList = res.data.data.list
-        }
-      }).catch(function(error) {
-        console.log(error)
-      })
-    },
     formatTime(time) {
       const h = parseInt(time / 3600 / 1000)
       const minute = parseInt((time - h * 3600 * 1000) / 60 / 1000)
@@ -226,7 +206,7 @@ export default {
       if (second < 0) {
         second = 0
       }
-      return (h > 0 ? h + `小时` : '') + (minute > 0 ? minute + '分' : '') + (second > 0 ? second + '秒' : '')
+      return (h > 0 ? h + '小时' : '') + (minute > 0 ? minute + '分' : '') + (second > 0 ? second + '秒' : '')
     },
     formatTimeStamp(time) {
       return moment.unix(time / 1000).format('yyyy-MM-DD HH:mm:ss')

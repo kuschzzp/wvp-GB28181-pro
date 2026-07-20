@@ -63,6 +63,10 @@
         <java.version>21</java.version>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
+        <project.packaging>jar</project.packaging>
+        <testcontainers.version>1.21.4</testcontainers.version>
+        <contract.test.groups></contract.test.groups>
+        <contract.test.excludedGroups>db-contract,kingbase-contract</contract.test.excludedGroups>
     </properties>
 
     <profiles>
@@ -99,6 +103,20 @@
                 </dependency>
             </dependencies>
         </profile>
+        <profile>
+            <id>db-contract</id>
+            <properties>
+                <contract.test.groups>db-contract</contract.test.groups>
+                <contract.test.excludedGroups>kingbase-contract</contract.test.excludedGroups>
+            </properties>
+        </profile>
+        <profile>
+            <id>kingbase-contract</id>
+            <properties>
+                <contract.test.groups>kingbase-contract</contract.test.groups>
+                <contract.test.excludedGroups>db-contract</contract.test.excludedGroups>
+            </properties>
+        </profile>
     </profiles>
 
     <dependencies>
@@ -113,6 +131,10 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
         <dependency>
@@ -404,6 +426,32 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mybatis.spring.boot</groupId>
+            <artifactId>mybatis-spring-boot-starter-test</artifactId>
+            <version>3.0.4</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>mysql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -461,7 +509,9 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
                 <configuration>
-                    <skipTests>true</skipTests>
+                    <useModulePath>false</useModulePath>
+                    <groups>${contract.test.groups}</groups>
+                    <excludedGroups>${contract.test.excludedGroups}</excludedGroups>
                 </configuration>
             </plugin>
 

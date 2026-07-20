@@ -1,5 +1,7 @@
 package com.genersoft.iot.vmp.gb28181.controller;
 
+import com.genersoft.iot.vmp.authorization.video.GbChannelAccessAuthorizer;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceRef;
 import com.genersoft.iot.vmp.common.InviteSessionType;
 import com.genersoft.iot.vmp.common.StreamInfo;
 import com.genersoft.iot.vmp.conf.UserSetting;
@@ -15,6 +17,8 @@ import com.genersoft.iot.vmp.gb28181.transmit.callback.DeferredResultHolder;
 import com.genersoft.iot.vmp.gb28181.transmit.callback.RequestMessage;
 import com.genersoft.iot.vmp.gb28181.transmit.cmd.impl.SIPCommander;
 import com.genersoft.iot.vmp.service.bean.InviteErrorCode;
+import com.genersoft.iot.vmp.media.security.DownloadResourceResolver;
+import com.genersoft.iot.vmp.media.security.DownloadTicketService;
 import com.genersoft.iot.vmp.utils.DateUtil;
 import com.genersoft.iot.vmp.vmanager.bean.ErrorCode;
 import com.genersoft.iot.vmp.vmanager.bean.StreamContent;
@@ -25,6 +29,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -39,7 +44,15 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 @RestController
 @RequestMapping("/api/gb_record")
+@PreAuthorize("@authz.check('video:record:list')")
 public class GBRecordController {
+
+	private static final String RECORD_LIST_PERMISSION = "video:record:list";
+	private static final String RECORD_DOWNLOAD_PERMISSION =
+			"video:record:download";
+
+	@Autowired
+	private GbChannelAccessAuthorizer channelAccessAuthorizer;
 
 	@Autowired
 	private SIPCommander cmder;
@@ -59,6 +72,12 @@ public class GBRecordController {
 	@Autowired
 	private UserSetting userSetting;
 
+	@Autowired
+	private DownloadResourceResolver downloadResourceResolver;
+
+	@Autowired
+	private DownloadTicketService downloadTicketService;
+
 	@Operation(summary = "录像查询", security = @SecurityRequirement(name = JwtUtils.HEADER))
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
 	@Parameter(name = "channelId", description = "通道国标编号", required = true)
@@ -67,7 +86,8 @@ public class GBRecordController {
 	@GetMapping("/query/{deviceId}/{channelId}")
 	public DeferredResult<WVPResult<RecordInfo>> recordinfo(@PathVariable String deviceId, @PathVariable String channelId, String startTime, String endTime){
 
-
+		channelAccessAuthorizer.requireGbChannel(
+				RECORD_LIST_PERMISSION, deviceId, channelId);
 		DeferredResult<WVPResult<RecordInfo>> result = new DeferredResult<>(Long.valueOf(userSetting.getRecordInfoTimeout()), TimeUnit.MILLISECONDS);
 		if (!DateUtil.verification(startTime, DateUtil.formatter)){
 			throw new ControllerException(ErrorCode.ERROR100.getCode(), "startTime格式为" + DateUtil.PATTERN);
@@ -107,11 +127,14 @@ public class GBRecordController {
 	@Parameter(name = "startTime", description = "开始时间", required = true)
 	@Parameter(name = "endTime", description = "结束时间", required = true)
 	@Parameter(name = "downloadSpeed", description = "下载倍速", required = true)
+	@PreAuthorize("@authz.check('video:record:download')")
 	@GetMapping("/download/start/{deviceId}/{channelId}")
 	public DeferredResult<WVPResult<StreamContent>> download(HttpServletRequest request, @PathVariable String deviceId, @PathVariable String channelId,
 															 String startTime, String endTime, String downloadSpeed) {
 
 		log.info("[开始历史媒体下载] deviceId: {}, channelId: {}, startTime: {}, endTime: {}, downloadSpeed: {}", deviceId, channelId, startTime, endTime, downloadSpeed);
+		channelAccessAuthorizer.requireGbChannel(
+				RECORD_DOWNLOAD_PERMISSION, deviceId, channelId);
 
 		String uuid = UUID.randomUUID().toString();
 		String key = DeferredResultHolder.CALLBACK_CMD_DOWNLOAD + deviceId + channelId;
@@ -162,6 +185,7 @@ public class GBRecordController {
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
 	@Parameter(name = "channelId", description = "通道国标编号", required = true)
 	@Parameter(name = "stream", description = "流ID", required = true)
+	@PreAuthorize("@authz.check('video:record:download')")
 	@GetMapping("/download/stop/{deviceId}/{channelId}/{stream}")
 	public void downloadStop(@PathVariable String deviceId, @PathVariable String channelId, @PathVariable String stream) {
 
@@ -172,6 +196,8 @@ public class GBRecordController {
 		if (deviceId == null || channelId == null) {
 			throw new ControllerException(ErrorCode.ERROR400);
 		}
+		channelAccessAuthorizer.requireGbChannel(
+				RECORD_DOWNLOAD_PERMISSION, deviceId, channelId);
 
 		Device device = deviceService.getDeviceByDeviceId(deviceId);
 		if (device == null) {
@@ -188,8 +214,11 @@ public class GBRecordController {
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
 	@Parameter(name = "channelId", description = "通道国标编号", required = true)
 	@Parameter(name = "stream", description = "流ID", required = true)
+	@PreAuthorize("@authz.check('video:record:download')")
 	@GetMapping("/download/progress/{deviceId}/{channelId}/{stream}")
 	public StreamContent getProgress(@PathVariable String deviceId, @PathVariable String channelId, @PathVariable String stream) {
+		VideoResourceRef channelResource = channelAccessAuthorizer.requireGbChannel(
+				RECORD_DOWNLOAD_PERMISSION, deviceId, channelId);
 		Device device = deviceService.getDeviceByDeviceId(deviceId);
 		if (device == null) {
 			log.warn("[获取历史媒体下载进度] 未找到设备 deviceId: {},channelId:{}", deviceId, channelId);
@@ -205,6 +234,13 @@ public class GBRecordController {
 		if (downLoadInfo == null) {
 			throw new ControllerException(ErrorCode.ERROR404);
 		}
-		return new StreamContent(downLoadInfo);
+		StreamContent content = new StreamContent(downLoadInfo);
+		if (downLoadInfo.getDownloadRecordId() != null) {
+			content.setDownloadTicket(downloadTicketService.issueTrusted(
+					downloadResourceResolver.resolveGbRecord(
+							downLoadInfo.getDownloadRecordId(),
+							channelResource)));
+		}
+		return content;
 	}
 }

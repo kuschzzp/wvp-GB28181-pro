@@ -1,23 +1,24 @@
 import request from '@/utils/request'
 
-export function login(params) {
+export function login(data) {
   return request({
-    url: '/api/user/login',
-    method: 'get',
-    params: params
+    url: '/api/auth/login',
+    method: 'post',
+    data
   })
 }
 
 export function logout() {
   return request({
-    url: '/api/user/logout',
-    method: 'get'
+    url: '/api/auth/logout',
+    method: 'post'
   })
 }
-export function getUserInfo() {
+
+export function getProfile() {
   return request({
-    method: 'post',
-    url: '/api/user/userInfo'
+    url: '/api/auth/profile',
+    method: 'get'
   })
 }
 
@@ -37,7 +38,7 @@ export function queryList(params) {
   const { page, count } = params
   return request({
     method: 'get',
-    url: `/api/user/users`,
+    url: '/api/user/users',
     params: {
       page: page,
       count: count
@@ -57,11 +58,13 @@ export function add(params) {
   const { username, password, roleId } = params
   return request({
     method: 'post',
-    url: '/api/user/add',
-    params: {
+    url: '/api/user',
+    data: {
       username: username,
       password: password,
-      roleId: roleId
+      nickname: username,
+      deptId: null,
+      roleIds: [roleId]
     }
   })
 }
@@ -87,5 +90,74 @@ export function changePasswordForAdmin(params) {
       password: password,
       userId: userId
     }
+  })
+}
+
+export function querySystemUsers(params = {}) {
+  return request({
+    method: 'get',
+    url: '/api/system/user',
+    params
+  })
+}
+
+export function getSystemUserReferences() {
+  return request({
+    method: 'get',
+    url: '/api/system/user/references'
+  })
+}
+
+export function getSystemUser(id) {
+  return request({
+    method: 'get',
+    url: `/api/system/user/${id}`
+  })
+}
+
+export function createSystemUser(data) {
+  return request({
+    method: 'post',
+    url: '/api/system/user',
+    data
+  })
+}
+
+export function updateSystemUser(id, data) {
+  return request({
+    method: 'put',
+    url: `/api/system/user/${id}`,
+    data
+  })
+}
+
+export function assignSystemUserRoles(id, roleIds) {
+  return request({
+    method: 'put',
+    url: `/api/system/user/${id}/roles`,
+    data: { roleIds }
+  })
+}
+
+export function changeSystemUserStatus(id, data) {
+  return request({
+    method: 'put',
+    url: `/api/system/user/${id}/status`,
+    data
+  })
+}
+
+export function resetSystemUserPassword(id, password) {
+  return request({
+    method: 'put',
+    url: `/api/system/user/${id}/password`,
+    data: { password }
+  })
+}
+
+export function deleteSystemUser(id) {
+  return request({
+    method: 'delete',
+    url: `/api/system/user/${id}`
   })
 }

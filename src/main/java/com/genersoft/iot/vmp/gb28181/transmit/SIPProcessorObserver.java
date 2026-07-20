@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.gb28181.transmit;
 
+import com.genersoft.iot.vmp.auth.internal.InternalInvocationGuard;
 import com.genersoft.iot.vmp.gb28181.event.EventPublisher;
 import com.genersoft.iot.vmp.gb28181.event.SipSubscribe;
 import com.genersoft.iot.vmp.gb28181.event.sip.SipEvent;
@@ -36,6 +37,9 @@ public class SIPProcessorObserver implements ISIPProcessorObserver {
     @Autowired
     private EventPublisher eventPublisher;
 
+    @Autowired
+    private InternalInvocationGuard internalInvocationGuard;
+
     /**
      * 添加 request订阅
      * @param method 方法名
@@ -62,14 +66,17 @@ public class SIPProcessorObserver implements ISIPProcessorObserver {
     @Async
     public void processRequest(RequestEvent requestEvent) {
         String method = requestEvent.getRequest().getMethod();
-        ISIPRequestProcessor sipRequestProcessor = requestProcessorMap.get(method);
-        if (sipRequestProcessor == null) {
-            log.warn("不支持方法{}的request", method);
-            // TODO 回复错误玛
-            return;
+        try (InternalInvocationGuard.Scope ignored =
+                     internalInvocationGuard.enterSip("request:" + method)) {
+            ISIPRequestProcessor sipRequestProcessor =
+                    requestProcessorMap.get(method);
+            if (sipRequestProcessor == null) {
+                log.warn("不支持方法{}的request", method);
+                // TODO 回复错误码
+                return;
+            }
+            sipRequestProcessor.process(requestEvent);
         }
-        requestProcessorMap.get(method).process(requestEvent);
-
     }
 
     /**
@@ -80,6 +87,18 @@ public class SIPProcessorObserver implements ISIPProcessorObserver {
     @Async
     public void processResponse(ResponseEvent responseEvent) {
         SIPResponse response = (SIPResponse)responseEvent.getResponse();
+        String method = response.getCSeqHeader() == null
+                ? "unknown"
+                : response.getCSeqHeader().getMethod();
+        try (InternalInvocationGuard.Scope ignored =
+                     internalInvocationGuard.enterSip("response:" + method)) {
+            processResponseInternal(responseEvent, response);
+        }
+    }
+
+    private void processResponseInternal(
+            ResponseEvent responseEvent,
+            SIPResponse response) {
         int status = response.getStatusCode();
 
         // Success
@@ -125,8 +144,6 @@ public class SIPProcessorObserver implements ISIPProcessorObserver {
                 responseEvent.getDialog().delete();
             }
         }
-
-
     }
 
     /**

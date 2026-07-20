@@ -20,15 +20,19 @@
         </div>
 
         <div class="control-side">
-          <jtDevicePtzPanel v-if="showPtz" :device-id="deviceId" :channel-id="channelId" />
+          <jtDevicePtzPanel
+            v-if="showPtz && $auth.hasPermi(['video:jt:ptz'])"
+            :device-id="deviceId"
+            :channel-id="channelId"
+          />
           <el-tabs v-model="tabActiveName" @tab-click="tabHandleClick" class="control-tabs">
             <el-tab-pane label="实时视频" name="media">
-              <streamMediaPanel v-if="tabActiveName === 'media'" :player-url="playerUrlInfo.playerUrl" :play-url="playerUrlInfo.playUrl" :stream-info="streamInfo" />
+              <streamMediaPanel v-if="tabActiveName === 'media'" :playable-ref="playableRef" :expires-at="playerUrlInfo.expiresAt" />
             </el-tab-pane>
             <el-tab-pane label="编码信息" name="codec">
               <mediaInfo v-if="tabActiveName === 'codec'" ref="mediaInfo" :app="app" :stream="streamId" :media-server-id="mediaServerId" />
             </el-tab-pane>
-            <el-tab-pane label="辅助开关" name="switch">
+            <el-tab-pane v-if="$auth.hasPermi(['video:jt:ptz'])" label="辅助开关" name="switch">
               <div style="display: flex; gap: 12px; justify-content: center; margin-top: 16px;">
                 <el-button-group>
                   <el-button size="small" type="primary" @click="wiper('on')">开启雨刷</el-button>
@@ -40,7 +44,7 @@
                 </el-button-group>
               </div>
             </el-tab-pane>
-            <el-tab-pane label="语音对讲" name="broadcast">
+            <el-tab-pane v-if="$auth.hasPermi(['video:jt:talk'])" label="语音对讲" name="broadcast">
               <div class="trank" style="text-align: center; width: 100%;">
                 <el-button
                   :type="getBroadcastStatus()"
@@ -71,7 +75,6 @@ import playerTabs from '../../common/playerTabs.vue'
 import streamMediaPanel from '../../common/streamMediaPanel.vue'
 import jtDevicePtzPanel from '../common/jtDevicePtzPanel.vue'
 import elDragDialog from '@/directive/el-drag-dialog'
-import crypto from 'crypto'
 import mediaInfo from '../../common/mediaInfo.vue'
 
 export default {
@@ -93,10 +96,10 @@ export default {
       isLoging: false,
       showPtz: true,
       streamInfo: null,
+      playableRef: null,
       playerHeight: '48vh',
       playerUrlInfo: {
-        playerUrl: null,
-        playUrl: null
+        expiresAt: null
       },
       broadcastRtc: null,
       broadcastStatus: -1
@@ -130,7 +133,9 @@ export default {
       }
     },
     play(streamInfo, hasAudio) {
+      if (!this.$auth.hasPermi(['video:jt:play'])) return
       this.streamInfo = streamInfo
+      this.playableRef = (streamInfo.transcodeStream || streamInfo).playable
       this.hasAudio = hasAudio
       this.isLoging = false
       this.streamId = streamInfo.stream
@@ -139,7 +144,7 @@ export default {
       this.showVideoDialog = true
       this.$nextTick(() => {
         if (this.$refs.playerTabs) {
-          this.$refs.playerTabs.setStreamInfo(streamInfo.transcodeStream || streamInfo)
+          this.$refs.playerTabs.setStreamInfo(this.playableRef)
         }
       })
     },
@@ -151,10 +156,12 @@ export default {
         this.$refs.playerTabs.stop()
       }
       this.videoUrl = ''
+      this.playableRef = null
       this.showVideoDialog = false
       this.stopBroadcast()
     },
     wiper(command) {
+      if (!this.$auth.hasPermi(['video:jt:ptz'])) return
       this.$store.dispatch('jtDevice/wiper', {
         phoneNumber: this.deviceId,
         channelId: this.channelId,
@@ -164,6 +171,7 @@ export default {
       })
     },
     fillLight(command) {
+      if (!this.$auth.hasPermi(['video:jt:ptz'])) return
       this.$store.dispatch('jtDevice/fillLight', {
         phoneNumber: this.deviceId,
         channelId: this.channelId,
@@ -179,6 +187,7 @@ export default {
       if (this.broadcastStatus === 1) return 'danger'
     },
     broadcastStatusClick() {
+      if (!this.$auth.hasPermi(['video:jt:talk'])) return
       if (this.broadcastStatus === -1) {
         this.broadcastStatus = 0
         this.$store.dispatch('jtDevice/startTalk', {
@@ -203,69 +212,62 @@ export default {
       }
     },
     startBroadcast(url) {
-      this.$store.dispatch('user/getUserInfo')
-        .then((data) => {
-          if (data === null) {
-            this.broadcastStatus = -1
-            return
-          }
-          const pushKey = data.pushKey
-          url += '&sign=' + crypto.createHash('md5').update(pushKey, 'utf8').digest('hex')
-          console.log('开始语音喊话： ' + url)
-          this.broadcastRtc = new ZLMRTCClient.Endpoint({
-            debug: true,
-            zlmsdpUrl: url,
-            simulecast: false,
-            useCamera: false,
-            audioEnable: true,
-            videoEnable: false,
-            recvOnly: false
-          })
+      if (!url) {
+        this.broadcastStatus = -1
+        this.$message.error('未找到可用的语音推流地址')
+        return
+      }
+      this.broadcastRtc = new ZLMRTCClient.Endpoint({
+        debug: true,
+        zlmsdpUrl: url,
+        simulecast: false,
+        useCamera: false,
+        audioEnable: true,
+        videoEnable: false,
+        recvOnly: false
+      })
 
-          this.broadcastRtc.on(ZLMRTCClient.Events.WEBRTC_NOT_SUPPORT, (e) => {
-            console.error('不支持webrtc', e)
-            this.$message({ showClose: true, message: '不支持webrtc, 无法进行语音喊话', type: 'error' })
-            this.broadcastStatus = -1
-          })
+      this.broadcastRtc.on(ZLMRTCClient.Events.WEBRTC_NOT_SUPPORT, (e) => {
+        console.error('不支持webrtc', e)
+        this.$message({ showClose: true, message: '不支持webrtc, 无法进行语音喊话', type: 'error' })
+        this.broadcastStatus = -1
+      })
 
-          this.broadcastRtc.on(ZLMRTCClient.Events.WEBRTC_ICE_CANDIDATE_ERROR, (e) => {
-            console.error('ICE 协商出错')
-            this.$message({ showClose: true, message: 'ICE 协商出错', type: 'error' })
-            this.broadcastStatus = -1
-          })
+      this.broadcastRtc.on(ZLMRTCClient.Events.WEBRTC_ICE_CANDIDATE_ERROR, () => {
+        console.error('ICE 协商出错')
+        this.$message({ showClose: true, message: 'ICE 协商出错', type: 'error' })
+        this.broadcastStatus = -1
+      })
 
-          this.broadcastRtc.on(ZLMRTCClient.Events.WEBRTC_OFFER_ANWSER_EXCHANGE_FAILED, (e) => {
-            console.error('offer anwser 交换失败', e)
-            this.$message({ showClose: true, message: 'offer anwser 交换失败' + e, type: 'error' })
-            this.broadcastStatus = -1
-          })
+      this.broadcastRtc.on(ZLMRTCClient.Events.WEBRTC_OFFER_ANWSER_EXCHANGE_FAILED, (e) => {
+        console.error('offer anwser 交换失败', e)
+        this.$message({ showClose: true, message: 'offer anwser 交换失败' + e, type: 'error' })
+        this.broadcastStatus = -1
+      })
 
-          this.broadcastRtc.on(ZLMRTCClient.Events.WEBRTC_ON_CONNECTION_STATE_CHANGE, (e) => {
-            console.log('状态改变', e)
-            if (e === 'connecting') {
-              this.broadcastStatus = 0
-            } else if (e === 'connected') {
-              this.broadcastStatus = 1
-            } else if (e === 'disconnected') {
-              this.broadcastStatus = -1
-            }
-          })
-
-          this.broadcastRtc.on(ZLMRTCClient.Events.CAPTURE_STREAM_FAILED, (e) => {
-            console.log('捕获流失败', e)
-            this.$message({ showClose: true, message: '捕获流失败' + e, type: 'error' })
-            this.broadcastStatus = -1
-          })
-        }).catch(e => {
-          this.$message({ showClose: true, message: e, type: 'error' })
+      this.broadcastRtc.on(ZLMRTCClient.Events.WEBRTC_ON_CONNECTION_STATE_CHANGE, (e) => {
+        console.log('状态改变', e)
+        if (e === 'connecting') {
+          this.broadcastStatus = 0
+        } else if (e === 'connected') {
+          this.broadcastStatus = 1
+        } else if (e === 'disconnected') {
           this.broadcastStatus = -1
-        })
+        }
+      })
+
+      this.broadcastRtc.on(ZLMRTCClient.Events.CAPTURE_STREAM_FAILED, (e) => {
+        console.log('捕获流失败', e)
+        this.$message({ showClose: true, message: '捕获流失败' + e, type: 'error' })
+        this.broadcastStatus = -1
+      })
     },
     stopBroadcast() {
       if (this.broadcastRtc) {
         this.broadcastRtc.close()
       }
       this.broadcastStatus = -1
+      if (!this.$auth.hasPermi(['video:jt:talk'])) return
       this.$store.dispatch('jtDevice/stopTalk', {
         phoneNumber: this.deviceId,
         channelId: this.channelId

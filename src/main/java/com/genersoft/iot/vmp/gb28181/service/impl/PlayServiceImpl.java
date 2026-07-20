@@ -20,7 +20,6 @@ import com.genersoft.iot.vmp.gb28181.transmit.cmd.ISIPCommanderForPlatform;
 import com.genersoft.iot.vmp.gb28181.utils.SipUtils;
 import com.genersoft.iot.vmp.media.bean.MediaInfo;
 import com.genersoft.iot.vmp.media.bean.MediaServer;
-import com.genersoft.iot.vmp.media.bean.RecordInfo;
 import com.genersoft.iot.vmp.media.event.hook.Hook;
 import com.genersoft.iot.vmp.media.event.hook.HookSubscribe;
 import com.genersoft.iot.vmp.media.event.hook.HookType;
@@ -28,6 +27,8 @@ import com.genersoft.iot.vmp.media.event.media.MediaArrivalEvent;
 import com.genersoft.iot.vmp.media.event.media.MediaDepartureEvent;
 import com.genersoft.iot.vmp.media.event.media.MediaNotFoundEvent;
 import com.genersoft.iot.vmp.media.service.IMediaServerService;
+import com.genersoft.iot.vmp.media.security.PlayableStreamService;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceType;
 import com.genersoft.iot.vmp.media.zlm.dto.StreamAuthorityInfo;
 import com.genersoft.iot.vmp.service.ICloudRecordService;
 import com.genersoft.iot.vmp.service.IReceiveRtpServerService;
@@ -38,6 +39,7 @@ import com.genersoft.iot.vmp.storager.IRedisCatchStorage;
 import com.genersoft.iot.vmp.utils.DateUtil;
 import com.genersoft.iot.vmp.vmanager.bean.AudioBroadcastResult;
 import com.genersoft.iot.vmp.vmanager.bean.ErrorCode;
+import com.genersoft.iot.vmp.vmanager.bean.MediaPublishEndpoint;
 import com.genersoft.iot.vmp.vmanager.bean.StreamContent;
 import gov.nist.javax.sip.message.SIPResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -130,6 +132,9 @@ public class PlayServiceImpl implements IPlayService {
 
     @Autowired
     private IRedisRpcPlayService redisRpcPlayService;
+
+    @Autowired
+    private PlayableStreamService playableStreamService;
 
     /**
      * 流到来的处理
@@ -1044,12 +1049,13 @@ public class PlayServiceImpl implements IPlayService {
                             log.info("[录像下载] 收到录像写入磁盘消息： ， {}/{}-{}",
                                     inviteInfo.getDeviceId(), inviteInfo.getChannelId(), ssrcInfo.getStream());
                             log.info("[录像下载] 收到录像写入磁盘消息内容： " + hookData);
-                            RecordInfo recordInfo = hookData.getRecordInfo();
-                            DownloadFileInfo downloadFileInfo = mediaServerService.getDownloadFilePath(mediaServer, recordInfo);
                             InviteInfo inviteInfoForNew = inviteStreamService.getInviteInfo(inviteInfo.getType()
                                     , inviteInfo.getChannelId(), inviteInfo.getStream());
                             if (inviteInfoForNew != null && inviteInfoForNew.getStreamInfo() != null) {
-                                inviteInfoForNew.getStreamInfo().setDownLoadFilePath(downloadFileInfo);
+                                inviteInfoForNew.getStreamInfo().setDownloadRecordId(
+                                        resolveDownloadRecordId(
+                                                ssrcInfo.getApp(),
+                                                ssrcInfo.getStream()));
                                 // 不可以马上移除会导致后续接口拿不到下载地址
                                 inviteStreamService.updateInviteInfo(inviteInfoForNew, 60*15L);
                             }
@@ -1077,7 +1083,16 @@ public class PlayServiceImpl implements IPlayService {
             String app = MediaStreamUtil.RTP_APP;
             StreamAuthorityInfo streamAuthorityInfo = redisCatchStorage.getStreamAuthorityInfo(app, stream);
             if (streamAuthorityInfo != null) {
-                List<CloudRecordItem> allList = cloudRecordService.getAllList(null, app, stream, null, null, null, streamAuthorityInfo.getCallId(), null);
+                List<CloudRecordItem> allList =
+                        cloudRecordService.getAllListForInternalPlayback(
+                                null,
+                                app,
+                                stream,
+                                null,
+                                null,
+                                null,
+                                streamAuthorityInfo.getCallId(),
+                                null);
                 if (allList.isEmpty()) {
                     log.warn("[获取下载进度] 未查询到录像下载的信息 {}/{}-{}", device.getDeviceId(), channel.getDeviceId(), stream);
                     return null;
@@ -1090,9 +1105,8 @@ public class PlayServiceImpl implements IPlayService {
                     return null;
                 }
                 log.warn("[获取下载进度] 发现下载已经结束，直接从数据库获取到文件 {}/{}-{}", device.getDeviceId(), channel.getDeviceId(), stream);
-                DownloadFileInfo downloadFileInfo = mediaServerService.getDownloadFilePath(mediaServer, RecordInfo.getInstance(allList.get(0)));
                 StreamInfo streamInfo = new StreamInfo();
-                streamInfo.setDownLoadFilePath(downloadFileInfo);
+                streamInfo.setDownloadRecordId(allList.get(0).getId());
                 streamInfo.setApp(app);
                 streamInfo.setStream(stream);
                 streamInfo.setServerId(mediaServerId);
@@ -1107,6 +1121,13 @@ public class PlayServiceImpl implements IPlayService {
         }
 
         if (inviteInfo.getStreamInfo().getProgress() == 1) {
+            if (inviteInfo.getStreamInfo().getDownloadRecordId() == null) {
+                inviteInfo.getStreamInfo().setDownloadRecordId(
+                        resolveDownloadRecordId(MediaStreamUtil.RTP_APP, stream));
+                if (inviteInfo.getStreamInfo().getDownloadRecordId() != null) {
+                    inviteStreamService.updateInviteInfo(inviteInfo, 60 * 15L);
+                }
+            }
             return inviteInfo.getStreamInfo();
         }
 
@@ -1138,6 +1159,25 @@ public class PlayServiceImpl implements IPlayService {
         }
         inviteStreamService.updateInviteInfo(inviteInfo);
         return inviteInfo.getStreamInfo();
+    }
+
+    private Integer resolveDownloadRecordId(String app, String stream) {
+        StreamAuthorityInfo authority =
+                redisCatchStorage.getStreamAuthorityInfo(app, stream);
+        if (authority == null || authority.getCallId() == null) {
+            return null;
+        }
+        List<CloudRecordItem> records =
+                cloudRecordService.getAllListForInternalPlayback(
+                        null,
+                        app,
+                        stream,
+                        null,
+                        null,
+                        null,
+                        authority.getCallId(),
+                        null);
+        return records.isEmpty() ? null : records.get(0).getId();
     }
 
     private StreamInfo onPublishHandlerForDownload(MediaServer mediaServerItemInuse, MediaInfo mediaInfo, Device device, DeviceChannel channel, String startTime, String endTime) {
@@ -1233,12 +1273,25 @@ public class PlayServiceImpl implements IPlayService {
         AudioBroadcastResult audioBroadcastResult = new AudioBroadcastResult();
         audioBroadcastResult.setApp(app);
         audioBroadcastResult.setStream(stream);
-        audioBroadcastResult.setStreamInfo(new StreamContent(mediaServerService.getStreamInfoByAppAndStream(mediaServerItem, app, stream, null, null, null, false)));
+        StreamInfo publishStream = mediaServerService.getStreamInfoByAppAndStream(
+                mediaServerItem, app, stream, null, null, null, false);
+        audioBroadcastResult.setStreamInfo(
+                MediaPublishEndpoint.from(publishStream));
         if (!broadcastMode) {
-            audioBroadcastResult.setPlayStreamInfo(new StreamContent(
-                    mediaServerService.getStreamInfoByAppAndStream(mediaServerItem,
-                            MediaStreamUtil.GB28181_TALK, stream + "_talk",
-                            null, null, null, true)));
+            StreamInfo audioPlayback =
+                    mediaServerService.getStreamInfoByAppAndStream(
+                            mediaServerItem,
+                            MediaStreamUtil.GB28181_TALK,
+                            stream + "_talk",
+                            null,
+                            null,
+                            null,
+                            true);
+            audioBroadcastResult.setPlayStreamInfo(
+                    playableStreamService.publish(
+                            audioPlayback,
+                            VideoResourceType.AUDIO_TALK,
+                            (long) deviceChannel.getId()));
         }
         audioBroadcastResult.setCodec("G.711");
         return audioBroadcastResult;

@@ -51,6 +51,17 @@ export function play(id) {
   })
 }
 
+export function forceClose(app, stream) {
+  return request({
+    method: 'get',
+    url: '/api/push/forceClose',
+    params: {
+      app: app,
+      stream: stream
+    }
+  })
+}
+
 export function remove(id) {
   return request({
     method: 'post',

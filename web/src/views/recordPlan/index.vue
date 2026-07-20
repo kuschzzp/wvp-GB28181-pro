@@ -115,10 +115,6 @@ export default {
           console.log(error)
         })
     },
-    getSnap: function(row) {
-      const baseUrl = window.baseUrl ? window.baseUrl : ''
-      return ((process.env.NODE_ENV === 'development') ? process.env.VUE_APP_BASE_API : baseUrl) + '/api/device/query/snap/' + this.deviceId + '/' + row.deviceId
-    },
     search: function() {
       this.currentPage = 1
       this.total = 0

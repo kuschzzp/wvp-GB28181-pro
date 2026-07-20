@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.gb28181.service;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.gb28181.bean.*;
 import com.github.pagehelper.PageInfo;
 
@@ -11,7 +12,20 @@ import java.util.List;
  */
 public interface IPlatformChannelService {
 
-    PageInfo<PlatformChannel> queryChannelList(int page, int count, String query, Integer channelType, Boolean online, Integer platformId, Boolean hasShare);
+    PageInfo<PlatformChannel> queryChannelList(
+            int page,
+            int count,
+            String query,
+            Integer channelType,
+            Boolean online,
+            Integer platformId,
+            Boolean hasShare,
+            VideoScopeQuery scope);
+
+    List<Integer> queryChannelIds(Integer platformId, boolean shared);
+
+    Integer queryChannelIdByPlatformChannelId(
+            Integer platformId, int platformChannelId);
 
     int addAllChannel(Integer platformId);
 

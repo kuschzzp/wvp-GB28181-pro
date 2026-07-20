@@ -107,7 +107,11 @@ public interface IMediaServerService {
      * @param stream
      * @return
      */
-    StreamInfo getStreamInfoByAppAndStreamWithCheck(String app, String stream, String mediaServerId,String addr, boolean authority);
+    StreamInfo getStreamInfoByAppAndStreamWithCheck(
+            String app,
+            String stream,
+            String mediaServerId,
+            String addr);
 
 
     /**
@@ -116,7 +120,10 @@ public interface IMediaServerService {
      * @param stream
      * @return
      */
-    StreamInfo getStreamInfoByAppAndStreamWithCheck(String app, String stream, String mediaServerId, boolean authority);
+    StreamInfo getStreamInfoByAppAndStreamWithCheck(
+            String app,
+            String stream,
+            String mediaServerId);
 
     /**
      * 根据应用名和流ID获取播放地址, 只是地址拼接

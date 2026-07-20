@@ -1,5 +1,5 @@
 <template>
-  <div class="ptz-section">
+  <div v-if="$auth.hasPermi(['video:ptz:control'])" class="ptz-section">
     <ptzControls
       btn-layout="row"
       @ptz-move="onPtzMove"
@@ -8,8 +8,8 @@
       @focus-stop="onFocusStop"
       @iris-move="onIrisMove"
       @iris-stop="onIrisStop"
-      @toggle-drag-zoom="$emit('drag-zoom-start', 'in')"
-      @toggle-drag-zoom-out="$emit('drag-zoom-start', 'out')"
+      @toggle-drag-zoom="emitDragZoom('in')"
+      @toggle-drag-zoom-out="emitDragZoom('out')"
     />
   </div>
 </template>
@@ -29,6 +29,7 @@ export default {
       return parseInt(speed * 255 / 100)
     },
     onPtzMove(e) {
+      if (!this.$auth.hasPermi(['video:ptz:control'])) return
       const speedVal = this.ptzSpeed(e.speed)
       this.$store.dispatch('frontEnd/ptz', {
         deviceId: this.deviceId,
@@ -40,6 +41,7 @@ export default {
       })
     },
     onPtzStop() {
+      if (!this.$auth.hasPermi(['video:ptz:control'])) return
       this.$store.dispatch('frontEnd/ptz', {
         deviceId: this.deviceId,
         channelId: this.channelId,
@@ -50,18 +52,26 @@ export default {
       })
     },
     onFocusMove(e) {
+      if (!this.$auth.hasPermi(['video:ptz:control'])) return
       const speedVal = this.ptzSpeed(e.speed)
       this.$store.dispatch('frontEnd/focus', [this.deviceId, this.channelId, e.command, speedVal])
     },
     onFocusStop() {
+      if (!this.$auth.hasPermi(['video:ptz:control'])) return
       this.$store.dispatch('frontEnd/focus', [this.deviceId, this.channelId, 'stop', 0])
     },
     onIrisMove(e) {
+      if (!this.$auth.hasPermi(['video:ptz:control'])) return
       const speedVal = this.ptzSpeed(e.speed)
       this.$store.dispatch('frontEnd/iris', [this.deviceId, this.channelId, e.command, speedVal])
     },
     onIrisStop() {
+      if (!this.$auth.hasPermi(['video:ptz:control'])) return
       this.$store.dispatch('frontEnd/iris', [this.deviceId, this.channelId, 'stop', 0])
+    },
+    emitDragZoom(type) {
+      if (!this.$auth.hasPermi(['video:ptz:control'])) return
+      this.$emit('drag-zoom-start', type)
     }
   }
 }

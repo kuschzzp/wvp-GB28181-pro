@@ -69,7 +69,7 @@ export default {
       form: {},
       rules: {
         newPassword: [{ required: true, validator: validatePass1, trigger: 'blur' }, {
-          pattern: /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[~!@#$%^&*()_+`\-={}:";'<>?,.\/]).{8,20}$/,
+          pattern: /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z\d\s])\S{8,20}$/,
           message: '密码长度在8-20位之间,由字母+数字+特殊字符组成'
         }],
         confirmPassword: [{ required: true, validator: validatePass2, trigger: 'blur' }]
@@ -83,7 +83,7 @@ export default {
       console.log(row)
       this.showDialog = true
       this.listChangeCallback = callback
-      if (row != null) {
+      if (row !== null) {
         this.form = row
       }
     },
@@ -92,7 +92,7 @@ export default {
         password: this.newPassword,
         userId: this.form.id
       })
-        .then(data => {
+        .then(() => {
           this.$message({
             showClose: true,
             message: '修改成功',

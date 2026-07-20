@@ -1,6 +1,8 @@
 package com.genersoft.iot.vmp.jt1078.dao;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.jt1078.bean.JTDevice;
+import com.genersoft.iot.vmp.jt1078.dao.provider.JTTerminalProvider;
 import org.apache.ibatis.annotations.*;
 
 import java.util.List;
@@ -27,30 +29,21 @@ public interface JTTerminalMapper {
             "<if test=\"latitude != null\">, latitude=#{latitude}</if>" +
             "<if test=\"registerTime != null\">, register_time=#{registerTime}</if>" +
             "<if test=\"status != null\">, status=#{status}</if>" +
-            "WHERE phone_number=#{phoneNumber}"+
+            " WHERE id=#{id}"+
             " </script>"})
     void updateDevice(JTDevice device);
-    @Select(value = {" <script>" +
-            "SELECT * " +
-            "from " +
-            "wvp_jt_terminal jd " +
-            "WHERE " +
-            "1=1" +
-            " <if test='query != null'> AND (" +
-            "   jd.phone_number LIKE concat('%',#{query},'%') " +
-            "OR jd.terminal_id LIKE concat('%',#{query},'%') " +
-            "OR jd.province_id LIKE concat('%',#{query},'%') " +
-            "OR jd.city_id LIKE concat('%',#{query},'%') " +
-            "OR jd.maker_id LIKE concat('%',#{query},'%') " +
-            "OR jd.model LIKE concat('%',#{query},'%') " +
-            "OR jd.phone_number LIKE concat('%',#{query},'%') " +
-            "OR jd.plate_no LIKE concat('%',#{query},'%')" +
-            ")</if> " +
-            " <if test='online == true' > AND jd.status= true</if>" +
-            " <if test='online == false' > AND jd.status= false</if>" +
-            "ORDER BY jd.create_time " +
-            " </script>"})
-    List<JTDevice> getDeviceList(@Param("query") String query, @Param("online") Boolean online);
+    @SelectProvider(type = JTTerminalProvider.class, method = "getDeviceList")
+    List<JTDevice> getDeviceList(
+            @Param("query") String query,
+            @Param("online") Boolean online,
+            @Param("scope") VideoScopeQuery scope);
+
+    @SelectProvider(
+            type = JTTerminalProvider.class,
+            method = "getDeviceListForInternalMaintenance")
+    List<JTDevice> getDeviceListForInternalMaintenance(
+            @Param("query") String query,
+            @Param("online") Boolean online);
 
     @Insert("INSERT INTO wvp_jt_terminal (" +
             "terminal_id,"+
@@ -89,6 +82,9 @@ public interface JTTerminalMapper {
 
     @Delete("delete from wvp_jt_terminal where phone_number = #{phoneNumber}")
     void deleteDeviceByPhoneNumber(@Param("phoneNumber") String phoneNumber);
+
+    @Delete("delete from wvp_jt_terminal where id = #{id}")
+    void deleteDeviceById(@Param("id") int id);
 
     @Update(value = {" <script>" +
             "UPDATE wvp_jt_terminal " +

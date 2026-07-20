@@ -1,7 +1,10 @@
 package com.genersoft.iot.vmp.streamProxy.dao;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
+import com.genersoft.iot.vmp.authorization.video.provider.VideoOverviewProvider;
 import com.genersoft.iot.vmp.streamProxy.bean.StreamProxy;
 import com.genersoft.iot.vmp.streamProxy.dao.provider.StreamProxyProvider;
+import com.genersoft.iot.vmp.vmanager.bean.ResourceBaseInfo;
 import org.apache.ibatis.annotations.*;
 import org.springframework.stereotype.Repository;
 
@@ -10,6 +13,9 @@ import java.util.List;
 @Mapper
 @Repository
 public interface StreamProxyMapper {
+
+    @SelectProvider(type = VideoOverviewProvider.class, method = "proxyOverview")
+    ResourceBaseInfo getOverview(@Param("scope") VideoScopeQuery scope);
 
     @Insert("INSERT INTO wvp_stream_proxy (type, app, stream,relates_media_server_id, src_url, " +
             "timeout, ffmpeg_cmd_key, rtsp_type, enable_audio, enable_mp4, enable, pulling, " +
@@ -41,7 +47,11 @@ public interface StreamProxyMapper {
     int delByAppAndStream(String app, String stream);
 
     @SelectProvider(type = StreamProxyProvider.class, method = "selectAll")
-    List<StreamProxy> selectAll(@Param("query") String query, @Param("pulling") Boolean pulling, @Param("mediaServerId") String mediaServerId);
+    List<StreamProxy> selectAll(
+            @Param("query") String query,
+            @Param("pulling") Boolean pulling,
+            @Param("mediaServerId") String mediaServerId,
+            @Param("scope") VideoScopeQuery scope);
 
     @SelectProvider(type = StreamProxyProvider.class, method = "selectOneByAppAndStream")
     StreamProxy selectOneByAppAndStream(@Param("app") String app, @Param("stream") String stream);

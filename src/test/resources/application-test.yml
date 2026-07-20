@@ -1,0 +1,32 @@
+spring:
+  main:
+    banner-mode: "off"
+  task:
+    scheduling:
+      enabled: false
+  datasource:
+    url: jdbc:h2:mem:wvp_auth_test;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  sql:
+    init:
+      mode: never
+
+mybatis:
+  configuration:
+    database-id: h2
+
+authorization:
+  mode: audit
+  allow-url-token-compatibility: false
+  legacy-role-dual-write-enabled: true
+  media:
+    legacy-response-enabled: false
+    legacy-response-sunset: 2026-10-01T00:00:00Z
+    hook-secret-pepper: test-media-hook-pepper-0123456789abcdef
+    hook-replay-window: 2s
+    hook-timestamp-skew: 2m
+    hook-nonce-ttl: 5m
+    abl-schema-by-network-type: {}
+  principal-cache-ttl: 5m

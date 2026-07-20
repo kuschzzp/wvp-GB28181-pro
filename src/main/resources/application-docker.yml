@@ -77,3 +77,33 @@ user-settings:
     # 推流直播是否录制
     record-push-live: true
     auto-apply-play: true
+    interface-authentication: true
+    interface-authentication-excludes: []
+    doc-enable: ${DOC_ENABLE:false}
+    jwk-file: ${JWK_FILE:config/jwk.json}
+
+authorization:
+    mode: audit
+    allow-url-token-compatibility: false
+    media:
+        legacy-response-enabled: false
+        legacy-response-sunset: 2026-10-01T00:00:00Z
+        hook-secret-pepper: ${MEDIA_HOOK_SECRET_PEPPER:}
+        hook-replay-window: 2s
+        hook-timestamp-skew: 2m
+        hook-nonce-ttl: 5m
+        abl-schema-by-network-type: {}
+        download:
+            ticket-ttl: 2m
+            max-batch-size: 100
+            snapshot-root: ${WVP_SNAPSHOT_ROOT:snap}
+            accel-root: ${MEDIA_DOWNLOAD_ACCEL_ROOT:/opt/media/bin/www/record}
+            accel-internal-prefix: /_protected_media/
+    principal-cache-ttl: 5m
+    legacy-md5-login-enabled: false
+    legacy-md5-login-sunset: 2026-10-01T00:00:00Z
+  api-key-pepper: ${API_KEY_PEPPER:}
+  legacy-api-key-enabled: false
+  legacy-api-key-sunset: 2026-10-01T00:00:00Z
+  # 全新 Docker 初始化已执行最终角色关系收缩脚本。
+  legacy-role-dual-write-enabled: false

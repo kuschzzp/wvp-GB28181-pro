@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.jt1078.codec.decode;
 
+import com.genersoft.iot.vmp.auth.internal.InternalInvocationGuard;
 import com.genersoft.iot.vmp.jt1078.proc.Header;
 import com.genersoft.iot.vmp.jt1078.proc.factory.CodecFactory;
 import com.genersoft.iot.vmp.jt1078.proc.request.Re;
@@ -29,10 +30,15 @@ public class Jt808Decoder extends ByteToMessageDecoder {
 
     private ApplicationEventPublisher applicationEventPublisher = null;
     private Ijt1078Service service = null;
+    private final InternalInvocationGuard internalInvocationGuard;
 
-    public Jt808Decoder(ApplicationEventPublisher applicationEventPublisher, Ijt1078Service service ) {
+    public Jt808Decoder(
+            ApplicationEventPublisher applicationEventPublisher,
+            Ijt1078Service service,
+            InternalInvocationGuard internalInvocationGuard) {
         this.applicationEventPublisher = applicationEventPublisher;
         this.service = service;
+        this.internalInvocationGuard = internalInvocationGuard;
     }
 
     @Override
@@ -74,13 +80,20 @@ public class Jt808Decoder extends ByteToMessageDecoder {
                 return;
             }
 
-            Rs decode = handler.decode(buf, header, session, service);
-            ApplicationEvent applicationEvent = handler.getEvent();
-            if (applicationEvent != null) {
-                applicationEventPublisher.publishEvent(applicationEvent);
-            }
-            if (decode != null) {
-                out.add(decode);
+            String terminalId = header.getPhoneNumber();
+            String sourceId = terminalId == null || terminalId.isBlank()
+                    ? "channel:" + ctx.channel().id().asShortText()
+                    : "terminal:" + terminalId;
+            try (InternalInvocationGuard.Scope ignored =
+                         internalInvocationGuard.enterJt1078(sourceId)) {
+                Rs decode = handler.decode(buf, header, session, service);
+                ApplicationEvent applicationEvent = handler.getEvent();
+                if (applicationEvent != null) {
+                    applicationEventPublisher.publishEvent(applicationEvent);
+                }
+                if (decode != null) {
+                    out.add(decode);
+                }
             }
         } finally {
             in.skipBytes(in.readableBytes());

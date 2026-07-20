@@ -7,6 +7,7 @@
 
 package com.genersoft.iot.vmp.gb28181.controller;
 
+import com.genersoft.iot.vmp.authorization.video.GbChannelAccessAuthorizer;
 import com.genersoft.iot.vmp.conf.security.JwtUtils;
 import com.genersoft.iot.vmp.gb28181.bean.Device;
 import com.genersoft.iot.vmp.gb28181.service.IDeviceService;
@@ -18,7 +19,9 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.Assert;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.request.async.DeferredResult;
 
@@ -26,7 +29,14 @@ import org.springframework.web.context.request.async.DeferredResult;
 @Slf4j
 @RestController
 @RequestMapping("/api/device/control")
+@PreAuthorize("@authz.check('video:device:config')")
 public class DeviceControl {
+
+	private static final String DEVICE_CONFIG_PERMISSION = "video:device:config";
+	private static final String RECORD_PLAY_PERMISSION = "video:record:play";
+
+	@Autowired
+	private GbChannelAccessAuthorizer channelAccessAuthorizer;
 
     @Autowired
     private IDeviceService deviceService;
@@ -36,6 +46,8 @@ public class DeviceControl {
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
     @GetMapping("/teleboot/{deviceId}")
     public void teleBootApi(@PathVariable String deviceId) {
+		channelAccessAuthorizer.requireGbDevice(
+				DEVICE_CONFIG_PERMISSION, deviceId);
         if (log.isDebugEnabled()) {
             log.debug("设备远程启动API调用");
         }
@@ -49,8 +61,11 @@ public class DeviceControl {
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
 	@Parameter(name = "channelId", description = "通道国标编号", required = true)
 	@Parameter(name = "recordCmdStr", description = "命令， 可选值：Record（手动录像），StopRecord（停止手动录像）", required = true)
-    @GetMapping("/record")
+	@PreAuthorize("@authz.check('video:record:play')")
+	@GetMapping("/record")
     public DeferredResult<WVPResult<String>> recordApi(String deviceId, String recordCmdStr, String channelId) {
+		channelAccessAuthorizer.requireGbChannel(
+				RECORD_PLAY_PERMISSION, deviceId, channelId);
         if (log.isDebugEnabled()) {
             log.debug("开始/停止录像API调用");
         }
@@ -73,6 +88,8 @@ public class DeviceControl {
 	@Parameter(name = "guardCmd", description = "命令， 可选值：SetGuard（布防），ResetGuard（撤防）", required = true)
 	@GetMapping("/guard")
 	public DeferredResult<WVPResult<String>> guardApi(String deviceId, String guardCmd) {
+		channelAccessAuthorizer.requireGbDevice(
+				DEVICE_CONFIG_PERMISSION, deviceId);
 		log.info("[布防/撤防] API调用, deviceId: {}, guardCmd: {}", deviceId, guardCmd);
 		Device device = deviceService.getDeviceByDeviceId(deviceId);
 		Assert.notNull(device, "设备不存在");
@@ -105,8 +122,9 @@ public class DeviceControl {
 			"1-存储设备磁盘故障报警;2-存储设备风扇故障报警")
 	@GetMapping("/reset_alarm")
 	public DeferredResult<WVPResult<String>> resetAlarm(String deviceId, String channelId,
-																@RequestParam(required = false) String alarmMethod,
-																@RequestParam(required = false) String alarmType) {
+														@RequestParam(required = false) String alarmMethod,
+														@RequestParam(required = false) String alarmType) {
+		requireControlTarget(deviceId, channelId);
 		log.info("[报警复位] deviceId: {}, channelId: {}, alarmMethod: {}, alarmType: {}", deviceId, channelId, alarmMethod, alarmType);
 		Device device = deviceService.getDeviceByDeviceId(deviceId);
 		Assert.notNull(device, "设备不存在");
@@ -126,6 +144,7 @@ public class DeviceControl {
 	@Parameter(name = "channelId", description = "通道国标编号")
 	@GetMapping("/i_frame")
 	public void iFrame(String deviceId, @RequestParam(required = false) String channelId) {
+		requireControlTarget(deviceId, channelId);
 		if (log.isDebugEnabled()) {
 			log.debug("强制关键帧API调用");
 		}
@@ -144,6 +163,7 @@ public class DeviceControl {
 	public DeferredResult<WVPResult<String>> homePositionApi(String deviceId, String channelId, Boolean enabled,
 												  @RequestParam(required = false) Integer resetTime,
 												  @RequestParam(required = false) Integer presetIndex) {
+		requireControlTarget(deviceId, channelId);
         if (log.isDebugEnabled()) {
 			log.debug("看守位设置API调用");
 		}
@@ -177,6 +197,7 @@ public class DeviceControl {
 											 @RequestParam int midPointY,
 											 @RequestParam int lengthX,
 											 @RequestParam int lengthY) {
+		requireControlTarget(deviceId, channelId);
 		if (log.isDebugEnabled()) {
 			log.debug(String.format("设备拉框放大 API调用，deviceId：%s ，channelId：%s ，length：%d ，width：%d ，midPointX：%d ，midPointY：%d ，lengthX：%d ，lengthY：%d",deviceId, channelId, length, width, midPointX, midPointY,lengthX, lengthY));
 		}
@@ -204,11 +225,22 @@ public class DeviceControl {
 											  @RequestParam int lengthX,
 											  @RequestParam int lengthY){
 
+		requireControlTarget(deviceId, channelId);
 		if (log.isDebugEnabled()) {
 			log.debug(String.format("设备拉框缩小 API调用，deviceId：%s ，channelId：%s ，length：%d ，width：%d ，midPointX：%d ，midPointY：%d ，lengthX：%d ，lengthY：%d",deviceId, channelId, length, width, midPointX, midPointY,lengthX, lengthY));
 		}
 		Device device = deviceService.getDeviceByDeviceId(deviceId);
 		Assert.notNull(device, "设备不存在");
 		deviceService.dragZoomOut(device, channelId, length, width, midPointX, midPointY, lengthX,lengthY);
+	}
+
+	private void requireControlTarget(String deviceId, String channelId) {
+		if (!StringUtils.hasText(channelId) || channelId.equals(deviceId)) {
+			channelAccessAuthorizer.requireGbDevice(
+					DEVICE_CONFIG_PERMISSION, deviceId);
+			return;
+		}
+		channelAccessAuthorizer.requireGbChannel(
+				DEVICE_CONFIG_PERMISSION, deviceId, channelId);
 	}
 }

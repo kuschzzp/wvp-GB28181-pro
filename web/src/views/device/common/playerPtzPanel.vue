@@ -1,10 +1,17 @@
 <template>
   <div class="player-ptz-panel">
-    <div class="player-section">
+    <div v-if="$auth.hasPermi(['video:channel:play'])" class="player-section">
       <div class="player-wrapper" :style="{ height: playerHeight }">
         <playerTabs ref="playerTabs" :has-audio="hasAudio" :show-button="true" />
       </div>
     </div>
+    <el-alert
+      v-else
+      title="当前账号没有实时播放权限"
+      type="info"
+      :closable="false"
+      show-icon
+    />
     <devicePtzPanel
       style="margin-top: 5vh"
       :device-id="deviceId"
@@ -29,7 +36,8 @@ export default {
     return {
       hasAudio: false,
       playerHeight: '40vh',
-      dragZoomDirection: ''
+      dragZoomDirection: '',
+      streamStarted: false
     }
   },
   mounted() {
@@ -40,12 +48,14 @@ export default {
   },
   methods: {
     startPlay() {
+      if (!this.$auth.hasPermi(['video:channel:play'])) return
       this.$store.dispatch('play/play', [this.deviceId, this.channelDeviceId])
         .then(data => {
+          this.streamStarted = true
           this.hasAudio = data.hasAudio
           this.$nextTick(() => {
             if (this.$refs.playerTabs) {
-              this.$refs.playerTabs.setStreamInfo(data.transcodeStream || data)
+              this.$refs.playerTabs.setStreamInfo((data.transcodeStream || data).playable)
             }
           })
         })
@@ -54,10 +64,18 @@ export default {
         })
     },
     stopPlay() {
+      if (!this.streamStarted) return
       this.$store.dispatch('play/stop', { deviceId: this.deviceId, channelId: this.channelDeviceId })
-        .catch(() => {})
+        .then(() => {
+          this.streamStarted = false
+        })
+        .catch(() => {
+          this.streamStarted = false
+        })
     },
     toggleDragZoom(direction) {
+      if (!this.$auth.hasPermi(['video:ptz:control'])) return
+      if (!this.$refs.playerTabs) return
       this.dragZoomDirection = direction
       this.$refs.playerTabs.startDragZoom((params) => {
         params.deviceId = this.deviceId

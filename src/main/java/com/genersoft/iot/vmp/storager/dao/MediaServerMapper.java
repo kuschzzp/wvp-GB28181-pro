@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.time.LocalDateTime;
 
 
 @Mapper
@@ -45,7 +46,13 @@ public interface MediaServerMapper {
             "update_time,"+
             "transcode_suffix,"+
             "server_id,"+
-            "hook_alive_interval"+
+            "hook_alive_interval,"+
+            "hook_secret_hash,"+
+            "previous_hook_secret_hash,"+
+            "previous_hook_secret_expires_at,"+
+            "hook_secret_version,"+
+            "hook_allowed_cidrs,"+
+            "hook_auth_enabled"+
             ") VALUES " +
             "(" +
             "#{id}, " +
@@ -80,7 +87,13 @@ public interface MediaServerMapper {
             "#{updateTime}, " +
             "#{transcodeSuffix}, " +
             "#{serverId}, " +
-            "#{hookAliveInterval})")
+            "#{hookAliveInterval}, " +
+            "#{hookSecretHash}, " +
+            "#{previousHookSecretHash}, " +
+            "#{previousHookSecretExpiresAt}, " +
+            "#{hookSecretVersion}, " +
+            "#{hookAllowedCidrs}, " +
+            "#{hookAuthEnabled})")
     int add(MediaServer mediaServerItem);
 
     @Update(value = {" <script>" +
@@ -94,7 +107,8 @@ public interface MediaServerMapper {
             ", auto_config=#{autoConfig}, rtp_enable=#{rtpEnable}, rtp_port_range=#{rtpPortRange}" +
             ", send_rtp_port_range=#{sendRtpPortRange}, secret=#{secret}, record_assist_port=#{recordAssistPort}" +
             ", hook_alive_interval=#{hookAliveInterval}, record_day=#{recordDay}, record_path=#{recordPath}" +
-            ", server_id=#{serverId}, type=#{type}" +
+            ", server_id=#{serverId}, type=#{type}, hook_allowed_cidrs=#{hookAllowedCidrs}" +
+            ", hook_auth_enabled=#{hookAuthEnabled}" +
             " WHERE id=#{id}"+
             " </script>"})
     int update(MediaServer mediaServerItem);
@@ -129,6 +143,8 @@ public interface MediaServerMapper {
             "<if test=\"type != null\">, type=#{type}</if>" +
             "<if test=\"transcodeSuffix != null\">, transcode_suffix=#{transcodeSuffix}</if>" +
             "<if test=\"hookAliveInterval != null\">, hook_alive_interval=#{hookAliveInterval}</if>" +
+            "<if test=\"hookAllowedCidrs != null\">, hook_allowed_cidrs=#{hookAllowedCidrs}</if>" +
+            "<if test=\"hookAuthEnabled != null\">, hook_auth_enabled=#{hookAuthEnabled}</if>" +
             "<if test=\"serverId != null\">, server_id=#{serverId}</if>" +
             " WHERE ip=#{ip} and http_port=#{httpPort}"+
             " </script>"})
@@ -136,6 +152,24 @@ public interface MediaServerMapper {
 
     @Select("SELECT * FROM wvp_media_server WHERE id=#{id}")
     MediaServer queryOne(@Param("id") String id);
+
+    @Update("UPDATE wvp_media_server SET "
+            + "hook_secret_hash=#{hookSecretHash}, "
+            + "previous_hook_secret_hash=#{previousHookSecretHash}, "
+            + "previous_hook_secret_expires_at=#{previousHookSecretExpiresAt}, "
+            + "hook_secret_version=#{hookSecretVersion}, "
+            + "hook_allowed_cidrs=#{hookAllowedCidrs}, "
+            + "hook_auth_enabled=#{hookAuthEnabled}, "
+            + "update_time=#{updateTime} WHERE id=#{id}")
+    int updateHookCredentials(MediaServer mediaServer);
+
+    @Update("UPDATE wvp_media_server SET previous_hook_secret_hash=null, "
+            + "previous_hook_secret_expires_at=null "
+            + "WHERE id=#{id} AND previous_hook_secret_expires_at IS NOT NULL "
+            + "AND previous_hook_secret_expires_at <= #{now}")
+    int clearExpiredPreviousHookSecret(
+            @Param("id") String id,
+            @Param("now") LocalDateTime now);
 
     @Select("SELECT * FROM wvp_media_server WHERE id=#{id} and server_id = #{serverId}")
     MediaServer queryOneWithServerId(@Param("id") String id, @Param("serverId") String serverId);

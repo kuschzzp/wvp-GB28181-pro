@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.gb28181.service;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.common.enums.DeviceControlType;
 import com.genersoft.iot.vmp.gb28181.bean.*;
 import com.genersoft.iot.vmp.service.bean.ErrorCallback;
@@ -28,7 +29,7 @@ public interface IDeviceChannelService {
      * 获取统计信息
      * @return
      */
-    ResourceBaseInfo getOverview();
+    ResourceBaseInfo getOverview(VideoScopeQuery scope);
 
     /**
      *  获取一个通道
@@ -60,13 +61,40 @@ public interface IDeviceChannelService {
 
     boolean resetChannels(int deviceDbId, List<DeviceChannel> deviceChannels);
 
-    PageInfo<DeviceChannel> getSubChannels(int deviceDbId, String channelId, String query, Boolean channelType, Boolean online, int page, int count);
+    PageInfo<DeviceChannel> getSubChannels(
+            int deviceDbId,
+            String channelId,
+            String query,
+            Boolean channelType,
+            Boolean online,
+            int page,
+            int count,
+            VideoScopeQuery scope);
 
-    List<DeviceChannelExtend> queryChannelExtendsByDeviceId(String deviceId, List<String> channelIds, Boolean online);
+    List<DeviceChannelExtend> queryChannelExtendsByDeviceId(
+            String deviceId,
+            List<String> channelIds,
+            Boolean online,
+            VideoScopeQuery scope);
 
-    PageInfo<DeviceChannel> queryChannelsByDeviceId(String deviceId, String query, Boolean channelType, Boolean online, int page, int count);
+    PageInfo<DeviceChannel> queryChannelsByDeviceId(
+            String deviceId,
+            String query,
+            Boolean channelType,
+            Boolean online,
+            int page,
+            int count,
+            VideoScopeQuery scope);
 
-    PageInfo<DeviceChannel> queryChannels(String query, Boolean queryParent, Boolean channelType, Boolean online, Boolean hasStream, int page, int count);
+    PageInfo<DeviceChannel> queryChannels(
+            String query,
+            Boolean queryParent,
+            Boolean channelType,
+            Boolean online,
+            Boolean hasStream,
+            int page,
+            int count,
+            VideoScopeQuery scope);
 
     List<Device> queryDeviceWithAsMessageChannel();
 

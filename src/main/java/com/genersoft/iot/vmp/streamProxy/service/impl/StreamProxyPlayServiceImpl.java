@@ -81,7 +81,11 @@ public class StreamProxyPlayServiceImpl implements IStreamProxyPlayService {
         }
 
         if (streamProxy.getMediaServerId() != null) {
-            StreamInfo streamInfo = mediaServerService.getStreamInfoByAppAndStreamWithCheck(streamProxy.getApp(), streamProxy.getStream(), streamProxy.getMediaServerId(), null, false);
+            StreamInfo streamInfo = mediaServerService.getStreamInfoByAppAndStreamWithCheck(
+                    streamProxy.getApp(),
+                    streamProxy.getStream(),
+                    streamProxy.getMediaServerId(),
+                    null);
             if (streamInfo != null) {
                 callback.run(ErrorCode.SUCCESS.getCode(), ErrorCode.SUCCESS.getMsg(), streamInfo);
                 return;

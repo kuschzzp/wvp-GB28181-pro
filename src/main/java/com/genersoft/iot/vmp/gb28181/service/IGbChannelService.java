@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.gb28181.service;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.gb28181.bean.*;
 import com.genersoft.iot.vmp.gb28181.controller.bean.Extent;
 import com.genersoft.iot.vmp.service.bean.GPSMsgInfo;
@@ -44,19 +45,32 @@ public interface IGbChannelService {
 
     void reset(int id, List<String> chanelFields);
 
-    PageInfo<CommonGBChannel> queryListByCivilCode(int page, int count, String query, Boolean online, Integer channelType, String civilCode);
+    PageInfo<CommonGBChannel> queryListByCivilCode(
+            int page,
+            int count,
+            String query,
+            Boolean online,
+            Integer channelType,
+            String civilCode,
+            VideoScopeQuery scope);
 
-    PageInfo<CommonGBChannel> queryListByParentId(int page, int count, String query, Boolean online, Integer channelType, String groupDeviceId);
+    PageInfo<CommonGBChannel> queryListByParentId(
+            int page,
+            int count,
+            String query,
+            Boolean online,
+            Integer channelType,
+            String groupDeviceId,
+            VideoScopeQuery scope);
 
     void removeCivilCode(List<Region> allChildren);
 
     void addChannelToRegion(String civilCode, List<Integer> channelIds);
 
-    void deleteChannelToRegion(String civilCode, List<Integer> channelIds);
-
-    void deleteChannelToRegionByCivilCode(String civilCode);
-
-    void deleteChannelToRegionByChannelIds(List<Integer> channelIds);
+    void deleteChannelToRegion(
+            String civilCode,
+            List<Integer> channelIds,
+            VideoScopeQuery scope);
 
     void addChannelToRegionByGbDevice(String civilCode, List<Integer> deviceIds);
 
@@ -72,7 +86,11 @@ public interface IGbChannelService {
 
     void addChannelToGroup(String parentId, String businessGroup, List<Integer> channelIds);
 
-    void deleteChannelToGroup(String parentId, String businessGroup, List<Integer> channelIds);
+    void deleteChannelToGroup(
+            String parentId,
+            String businessGroup,
+            List<Integer> channelIds,
+            VideoScopeQuery scope);
 
     void addChannelToGroupByGbDevice(String parentId, String businessGroup, List<Integer> deviceIds);
 
@@ -86,29 +104,70 @@ public interface IGbChannelService {
 
     List<CommonGBChannel> queryListByStreamPushList(List<StreamPush> streamPushList);
 
-    PageInfo<CommonGBChannel> queryList(int page, int count, String query, Boolean online, Boolean hasRecordPlan, Integer channelType, String civilCode, String parentDeviceId);
+    PageInfo<CommonGBChannel> queryList(
+            int page,
+            int count,
+            String query,
+            Boolean online,
+            Boolean hasRecordPlan,
+            Integer channelType,
+            String civilCode,
+            String parentDeviceId,
+            VideoScopeQuery scope);
 
-    PageInfo<CommonGBChannel> queryListByCivilCodeForUnusual(int page, int count, String query, Boolean online, Integer channelType);
+    PageInfo<CommonGBChannel> queryListByCivilCodeForUnusual(
+            int page,
+            int count,
+            String query,
+            Boolean online,
+            Integer channelType,
+            VideoScopeQuery scope);
 
-    void clearChannelCivilCode(Boolean all, List<Integer> channelIds);
+    void clearChannelCivilCode(
+            Boolean all,
+            List<Integer> channelIds,
+            VideoScopeQuery scope);
 
-    PageInfo<CommonGBChannel> queryListByParentForUnusual(int page, int count, String query, Boolean online, Integer channelType);
+    PageInfo<CommonGBChannel> queryListByParentForUnusual(
+            int page,
+            int count,
+            String query,
+            Boolean online,
+            Integer channelType,
+            VideoScopeQuery scope);
 
-    void clearChannelParent(Boolean all, List<Integer> channelIds);
+    void clearChannelParent(
+            Boolean all,
+            List<Integer> channelIds,
+            VideoScopeQuery scope);
 
     void updateGPSFromGPSMsgInfo(List<GPSMsgInfo> gpsMsgInfoList);
 
     void updateGPS(List<CommonGBChannel> channelList);
 
-    List<CommonGBChannel> queryListForMap(String query, Boolean online, Boolean hasRecordPlan, Integer channelType);
+    List<CommonGBChannel> queryListForMap(
+            String query,
+            Boolean online,
+            Boolean hasRecordPlan,
+            Integer channelType,
+            VideoScopeQuery scope);
 
     CommonGBChannel queryCommonChannelByDeviceChannel(DeviceChannel channel);
 
     void resetLevel();
 
-    byte[] getTile(int z, int x, int y, String geoCoordSys);
+    byte[] getTile(
+            int z,
+            int x,
+            int y,
+            String geoCoordSys,
+            VideoScopeQuery scope);
 
-    String drawThin(Map<Integer, Double> zoomParam, Extent extent, String geoCoordSys);
+    String drawThin(
+            Map<Integer, Double> zoomParam,
+            Extent extent,
+            String geoCoordSys,
+            VideoScopeQuery scope);
 
     DrawThinProcess thinProgress(String id);
 

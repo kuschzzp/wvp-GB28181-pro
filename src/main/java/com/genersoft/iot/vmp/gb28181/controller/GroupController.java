@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
 import org.springframework.web.bind.annotation.*;
@@ -21,6 +22,7 @@ import java.util.List;
 @Tag(name = "分组管理")
 @RestController
 @RequestMapping("/api/group")
+@PreAuthorize("@authz.check('video:channel:list')")
 public class GroupController {
 
     @Autowired
@@ -29,6 +31,7 @@ public class GroupController {
     @Operation(summary = "添加分组")
     @Parameter(name = "group", description = "group", required = true)
     @ResponseBody
+    @PreAuthorize("@authz.check('video:channel:edit')")
     @PostMapping("/add")
     public void add(@RequestBody Group group){
         groupService.add(group);
@@ -64,6 +67,7 @@ public class GroupController {
     @Operation(summary = "更新分组")
     @Parameter(name = "group", description = "Group", required = true)
     @ResponseBody
+    @PreAuthorize("@authz.check('video:channel:edit')")
     @PostMapping("/update")
     public void update(@RequestBody Group group){
         groupService.update(group);
@@ -72,6 +76,7 @@ public class GroupController {
     @Operation(summary = "删除分组")
     @Parameter(name = "id", description = "分组id", required = true)
     @ResponseBody
+    @PreAuthorize("@authz.check('video:channel:edit')")
     @DeleteMapping("/delete")
     public void delete(Integer id){
         Assert.notNull(id, "分组id（deviceId）不需要存在");

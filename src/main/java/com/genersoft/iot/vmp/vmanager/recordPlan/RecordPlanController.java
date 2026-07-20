@@ -1,5 +1,7 @@
 package com.genersoft.iot.vmp.vmanager.recordPlan;
 
+import com.genersoft.iot.vmp.authorization.AuthorizationFacade;
+import com.genersoft.iot.vmp.authorization.video.GbChannelAccessAuthorizer;
 import com.genersoft.iot.vmp.conf.exception.ControllerException;
 import com.genersoft.iot.vmp.conf.security.JwtUtils;
 import com.genersoft.iot.vmp.gb28181.bean.CommonGBChannel;
@@ -16,6 +18,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ObjectUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.Assert;
 import org.springframework.web.bind.annotation.*;
 
@@ -26,7 +29,15 @@ import java.util.List;
 @Slf4j
 @RestController
 @RequestMapping("/api/record/plan")
+@PreAuthorize("@authz.check('video:cloud-record:list')")
 public class RecordPlanController {
+
+    private static final String CLOUD_RECORD_LIST_PERMISSION =
+            "video:cloud-record:list";
+    private static final String CLOUD_RECORD_COLLECT_PERMISSION =
+            "video:cloud-record:collect";
+    private static final String CLOUD_RECORD_REMOVE_PERMISSION =
+            "video:cloud-record:remove";
 
     @Autowired
     private IRecordPlanService recordPlanService;
@@ -34,8 +45,15 @@ public class RecordPlanController {
     @Autowired
     private IDeviceChannelService deviceChannelService;
 
+    @Autowired
+    private AuthorizationFacade authorizationFacade;
+
+    @Autowired
+    private GbChannelAccessAuthorizer channelAccessAuthorizer;
+
 
     @ResponseBody
+    @PreAuthorize("@authz.check('video:cloud-record:collect')")
     @PostMapping("/add")
     @Operation(summary = "添加录制计划", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "plan", description = "计划", required = true)
@@ -47,15 +65,23 @@ public class RecordPlanController {
     }
 
     @ResponseBody
+    @PreAuthorize("@authz.check('video:cloud-record:collect')")
     @PostMapping("/link")
     @Operation(summary = "通道关联录制计划", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "param", description = "通道关联录制计划", required = true)
     public void link(@RequestBody RecordPlanParam param) {
         if (param.getAllLink() != null) {
+            Assert.notNull(param.getPlanId(), "录制计划ID不可为NULL");
             if (param.getAllLink()) {
-                recordPlanService.linkAll(param.getPlanId());
+                recordPlanService.linkAll(
+                        param.getPlanId(),
+                        authorizationFacade.resolveVideoScopeQuery(
+                                CLOUD_RECORD_COLLECT_PERMISSION));
             }else {
-                recordPlanService.cleanAll(param.getPlanId());
+                recordPlanService.cleanAll(
+                        param.getPlanId(),
+                        authorizationFacade.resolveVideoScopeQuery(
+                                CLOUD_RECORD_COLLECT_PERMISSION));
             }
             return;
         }
@@ -73,6 +99,8 @@ public class RecordPlanController {
                 channelIds = chanelIdList;
             }
         }
+        channelAccessAuthorizer.requireAllChannels(
+                CLOUD_RECORD_COLLECT_PERMISSION, channelIds);
         recordPlanService.link(channelIds, param.getPlanId());
     }
 
@@ -84,6 +112,7 @@ public class RecordPlanController {
         if (planId == null) {
             throw new ControllerException(ErrorCode.ERROR100.getCode(), "计划ID不可为NULL");
         }
+        requireLinkedChannels(CLOUD_RECORD_LIST_PERMISSION, planId);
         return recordPlanService.get(planId);
     }
 
@@ -122,10 +151,20 @@ public class RecordPlanController {
             query = null;
         }
 
-        return recordPlanService.queryChannelList(page, count, query, channelType,  online, planId, hasLink);
+        return recordPlanService.queryChannelList(
+                page,
+                count,
+                query,
+                channelType,
+                online,
+                planId,
+                hasLink,
+                authorizationFacade.resolveVideoScopeQuery(
+                        CLOUD_RECORD_LIST_PERMISSION));
     }
 
     @ResponseBody
+    @PreAuthorize("@authz.check('video:cloud-record:collect')")
     @PostMapping("/update")
     @Operation(summary = "更新录制计划", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "plan", description = "计划", required = true)
@@ -133,10 +172,12 @@ public class RecordPlanController {
         if (plan == null || plan.getId() == 0) {
             throw new ControllerException(ErrorCode.ERROR400);
         }
+        requireLinkedChannels(CLOUD_RECORD_COLLECT_PERMISSION, plan.getId());
         recordPlanService.update(plan);
     }
 
     @ResponseBody
+    @PreAuthorize("@authz.check('video:cloud-record:remove')")
     @DeleteMapping("/delete")
     @Operation(summary = "删除录制计划", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "planId", description = "计划ID", required = true)
@@ -144,7 +185,16 @@ public class RecordPlanController {
         if (planId == null) {
             throw new ControllerException(ErrorCode.ERROR100.getCode(), "计划IDID不可为NULL");
         }
+        requireLinkedChannels(CLOUD_RECORD_REMOVE_PERMISSION, planId);
         recordPlanService.delete(planId);
+    }
+
+    private void requireLinkedChannels(String permissionCode, Integer planId) {
+        List<Integer> channelIds = recordPlanService.getLinkedChannelIds(planId);
+        if (channelIds != null && !channelIds.isEmpty()) {
+            channelAccessAuthorizer.requireAllChannels(
+                    permissionCode, channelIds);
+        }
     }
 
 }

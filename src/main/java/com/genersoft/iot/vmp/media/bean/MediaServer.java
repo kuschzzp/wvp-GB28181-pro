@@ -1,11 +1,14 @@
 package com.genersoft.iot.vmp.media.bean;
 
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.genersoft.iot.vmp.media.abl.bean.AblServerConfig;
 import com.genersoft.iot.vmp.media.zlm.dto.ZLMServerConfig;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import org.springframework.util.ObjectUtils;
+
+import java.time.LocalDateTime;
 
 @Schema(description = "流媒体服务信息")
 @Data
@@ -73,6 +76,28 @@ public class MediaServer {
 
     @Schema(description = "keepalive hook触发间隔,单位秒")
     private Float hookAliveInterval;
+
+    @JsonIgnore
+    @Schema(hidden = true)
+    private String hookSecretHash;
+
+    @JsonIgnore
+    @Schema(hidden = true)
+    private String previousHookSecretHash;
+
+    @JsonIgnore
+    @Schema(hidden = true)
+    private LocalDateTime previousHookSecretExpiresAt;
+
+    @JsonIgnore
+    @Schema(hidden = true)
+    private long hookSecretVersion;
+
+    @Schema(description = "允许访问 Hook 的媒体节点 CIDR，逗号分隔")
+    private String hookAllowedCidrs;
+
+    @Schema(description = "是否允许此媒体节点调用 Hook")
+    private Boolean hookAuthEnabled;
 
     @Schema(description = "是否使用多端口模式")
     private boolean rtpEnable;

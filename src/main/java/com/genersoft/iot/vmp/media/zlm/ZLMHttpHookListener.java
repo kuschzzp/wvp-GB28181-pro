@@ -2,6 +2,7 @@ package com.genersoft.iot.vmp.media.zlm;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.genersoft.iot.vmp.auth.annotation.MediaHookEndpoint;
 import com.genersoft.iot.vmp.common.enums.MediaStreamUtil;
 import com.genersoft.iot.vmp.conf.MediaConfig;
 import com.genersoft.iot.vmp.conf.UserSetting;
@@ -9,6 +10,13 @@ import com.genersoft.iot.vmp.media.bean.MediaServer;
 import com.genersoft.iot.vmp.media.bean.ResultForOnPublish;
 import com.genersoft.iot.vmp.media.event.media.*;
 import com.genersoft.iot.vmp.media.event.mediaServer.MediaSendRtpStoppedEvent;
+import com.genersoft.iot.vmp.media.security.MediaHookAuthenticationFilter;
+import com.genersoft.iot.vmp.media.security.MediaHookParameters;
+import com.genersoft.iot.vmp.media.security.MediaNodePrincipal;
+import com.genersoft.iot.vmp.media.security.MediaNodeType;
+import com.genersoft.iot.vmp.media.security.MediaPlayHookRequest;
+import com.genersoft.iot.vmp.media.security.PlayTicketDecision;
+import com.genersoft.iot.vmp.media.security.PlayTicketService;
 import com.genersoft.iot.vmp.media.service.IMediaServerService;
 import com.genersoft.iot.vmp.media.zlm.dto.ZLMServerConfig;
 import com.genersoft.iot.vmp.media.zlm.dto.hook.*;
@@ -37,8 +45,9 @@ import java.util.Objects;
  */
 @Slf4j
 @RestController
-@RequestMapping("/index/hook")
+@RequestMapping("/index/hook/zlm")
 @Hidden
+@MediaHookEndpoint(reason = "ZLMediaKit 媒体节点回调边界，使用独立逐节点 Hook 身份")
 public class ZLMHttpHookListener {
 
     @Autowired
@@ -55,6 +64,9 @@ public class ZLMHttpHookListener {
 
     @Autowired
     private ApplicationEventPublisher applicationEventPublisher;
+
+    @Autowired
+    private PlayTicketService playTicketService;
 
 
     /**
@@ -81,19 +93,57 @@ public class ZLMHttpHookListener {
      */
     @ResponseBody
     @PostMapping(value = "/on_play", produces = "application/json;charset=UTF-8")
-    public HookResult onPlay(@RequestBody OnPlayHookParam param) {
-
-        Map<String, String> paramMap = MediaServerUtils.urlParamToMap(param.getParams());
-        // 对于播放流进行鉴权
-        boolean authenticateResult = mediaService.authenticatePlay(param.getApp(), param.getStream(), paramMap.get("callId"));
-        if (!authenticateResult) {
-            log.info("[ZLM HOOK] 播放鉴权 失败：{}->{}", param.getMediaServerId(), param);
-            return new HookResult(401, "Unauthorized");
+    public HookResult onPlay(
+            HttpServletRequest request,
+            @RequestBody OnPlayHookParam param) {
+        if (!matchesAuthenticatedNode(
+                request, param.getMediaServerId(), MediaNodeType.ZLM)) {
+            return denyPlay(param, "NODE_IDENTITY_MISMATCH");
         }
-        if (log.isDebugEnabled()){
-            log.debug("[ZLM HOOK] 播放鉴权成功：{}->{}", param.getMediaServerId(), param);
+        MediaPlayHookRequest verificationRequest = new MediaPlayHookRequest(
+                param.getMediaServerId(),
+                param.getApp(),
+                param.getStream(),
+                param.getSchema(),
+                MediaHookParameters.unique(param.getParams(), "ticket"));
+        final PlayTicketDecision decision;
+        try {
+            decision = playTicketService.verify(verificationRequest);
+        } catch (RuntimeException exception) {
+            log.warn("[ZLM HOOK] 播放票据校验异常，已拒绝：node={}, app={}, stream={}, schema={}",
+                    param.getMediaServerId(), param.getApp(),
+                    param.getStream(), param.getSchema());
+            return denyPlay(param, "TICKET_VERIFY_ERROR");
         }
+        if (decision == null || !decision.allowed()) {
+            return denyPlay(
+                    param,
+                    decision == null ? "EMPTY_DECISION" : decision.reason());
+        }
+        log.debug("[ZLM HOOK] 播放票据校验成功：node={}, app={}, stream={}, schema={}",
+                param.getMediaServerId(), param.getApp(),
+                param.getStream(), param.getSchema());
         return HookResult.SUCCESS();
+    }
+
+    private HookResult denyPlay(OnPlayHookParam param, String reason) {
+        log.info("[ZLM HOOK] 播放票据校验失败：node={}, app={}, stream={}, schema={}, reason={}",
+                param.getMediaServerId(), param.getApp(),
+                param.getStream(), param.getSchema(), reason);
+        return new HookResult(401, "Unauthorized");
+    }
+
+    private boolean matchesAuthenticatedNode(
+            HttpServletRequest request,
+            String mediaServerId,
+            MediaNodeType nodeType) {
+        Object attribute = request == null
+                ? null
+                : request.getAttribute(
+                        MediaHookAuthenticationFilter.PRINCIPAL_ATTRIBUTE);
+        return attribute instanceof MediaNodePrincipal principal
+                && principal.nodeType() == nodeType
+                && principal.mediaServerId().equals(mediaServerId);
     }
 
     /**

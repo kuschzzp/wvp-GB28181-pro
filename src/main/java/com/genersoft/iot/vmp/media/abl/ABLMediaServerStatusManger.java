@@ -12,6 +12,8 @@ import com.genersoft.iot.vmp.media.abl.event.HookAblServerStartEvent;
 import com.genersoft.iot.vmp.media.bean.MediaServer;
 import com.genersoft.iot.vmp.media.event.mediaServer.MediaServerChangeEvent;
 import com.genersoft.iot.vmp.media.event.mediaServer.MediaServerDeleteEvent;
+import com.genersoft.iot.vmp.media.security.MediaHookAuthenticationFilter;
+import com.genersoft.iot.vmp.media.security.MediaHookCredentialService;
 import com.genersoft.iot.vmp.media.service.IMediaServerService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,6 +22,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.lang.reflect.Field;
 import java.util.Map;
@@ -51,11 +54,17 @@ public class ABLMediaServerStatusManger {
     @Value("${server.port}")
     private Integer serverPort;
 
+    @Value("${server.servlet.context-path:}")
+    private String serverServletContextPath;
+
     @Autowired
     private UserSetting userSetting;
 
     @Autowired
     private EventPublisher eventPublisher;
+
+    @Autowired
+    private MediaHookCredentialService mediaHookCredentialService;
 
     private final String type = "abl";
 
@@ -199,6 +208,7 @@ public class ABLMediaServerStatusManger {
         // 发送上线通知
         eventPublisher.mediaServerOnlineEventPublish(mediaServer);
         mediaServerService.update(mediaServer);
+        setAblConfig(mediaServer, false, config);
         // 设置两次心跳未收到则认为zlm离线
         String key = "ABL-keepalive-" + mediaServer.getId();
         dynamicTask.startDelay(key, ()->{
@@ -236,18 +246,43 @@ public class ABLMediaServerStatusManger {
         mediaServer.setHookAliveInterval(10F);
     }
 
-    public void setAblConfig(MediaServer mediaServerItem, boolean restart, AblServerConfig config) {
+    public boolean setAblConfig(
+            MediaServer mediaServerItem,
+            boolean restart,
+            AblServerConfig config) {
+        if (Boolean.FALSE.equals(mediaServerItem.getHookAuthEnabled())) {
+            log.warn("[媒体服务节点-ABL] Hook 身份已停用，不下发回调配置：{}",
+                    mediaServerItem.getId());
+            return false;
+        }
+        if (config == null) {
+            ABLResult serverConfigResult = ablResTfulUtils.getServerConfig(mediaServerItem);
+            if (serverConfigResult == null
+                    || serverConfigResult.getCode() != 0
+                    || serverConfigResult.getParams() == null
+                    || serverConfigResult.getParams().isEmpty()) {
+                log.warn("[媒体服务节点-ABL] 无法读取节点配置：{}",
+                        mediaServerItem.getId());
+                return false;
+            }
+            config = AblServerConfig.getInstance(serverConfigResult.getParams());
+        }
+        String rawHookSecret = mediaHookCredentialService.ensureCredential(
+                mediaServerItem);
+        boolean success = true;
         try {
             if (config.getHookEnable() == 0) {
                 log.info("[媒体服务节点-ABL]  开启HOOK功能 ：{}", mediaServerItem.getId());
                 ABLResult ablResult = ablResTfulUtils.setConfigParamValue(mediaServerItem, "hook_enable", "1");
-                if (ablResult.getCode() == 0) {
+                if (ablResult != null && ablResult.getCode() == 0) {
                     log.info("[媒体服务节点-ABL]  开启HOOK功能成功 ：{}", mediaServerItem.getId());
                 }else {
-                    log.info("[媒体服务节点-ABL]  开启HOOK功能失败 ：{}->{}", mediaServerItem.getId(), ablResult.getMemo());
+                    success = false;
+                    log.info("[媒体服务节点-ABL]  开启HOOK功能失败 ：{}->{}", mediaServerItem.getId(), ablResult == null ? "empty response" : ablResult.getMemo());
                 }
             }
         }catch (Exception e) {
+            success = false;
             log.info("[媒体服务节点-ABL]  开启HOOK功能失败 ：{}", mediaServerItem.getId(), e);
         }
         // 设置相关的HOOK
@@ -267,31 +302,60 @@ public class ABLMediaServerStatusManger {
         };
 
         String protocol = sslEnabled ? "https" : "http";
-        String hookPrefix = String.format("%s://%s:%s/index/hook/abl", protocol, mediaServerItem.getHookIp(), serverPort);
+        String contextPath = serverServletContextPath == null
+                || "/".equals(serverServletContextPath)
+                ? ""
+                : serverServletContextPath;
+        String hookPrefix = String.format(
+                "%s://%s:%s%s/index/hook/abl",
+                protocol,
+                mediaServerItem.getHookIp(),
+                serverPort,
+                contextPath);
         Field[] fields = AblServerConfig.class.getDeclaredFields();
+        int matchedHooks = 0;
         for (Field field : fields) {
             try {
                 if (field.isAnnotationPresent(ConfigKeyId.class)) {
                     ConfigKeyId configKeyId = field.getAnnotation(ConfigKeyId.class);
                     for (String hook : hookUrlArray) {
                         if (configKeyId.value().equals(hook)) {
-                            String hookUrl =  String.format("%s/%s", hookPrefix, hook);
+                            matchedHooks++;
+                            String hookUrl = UriComponentsBuilder
+                                    .fromUriString(String.format("%s/%s", hookPrefix, hook))
+                                    .queryParam(
+                                            MediaHookAuthenticationFilter.MEDIA_SERVER_ID_PARAM,
+                                            mediaServerItem.getId())
+                                    .queryParam(
+                                            MediaHookAuthenticationFilter.HOOK_SECRET_PARAM,
+                                            rawHookSecret)
+                                    .build()
+                                    .encode()
+                                    .toUriString();
                             field.setAccessible(true);
                             // 利用反射获取值后对比是否与配置中相同，不同则进行设置
                             if (!hookUrl.equals(field.get(config))) {
                                 ABLResult ablResult = ablResTfulUtils.setConfigParamValue(mediaServerItem, hook, hookUrl);
-                                if (ablResult.getCode() == 0) {
+                                if (ablResult != null && ablResult.getCode() == 0) {
                                     log.info("[媒体服务节点-ABL]  设置HOOK {} 成功 ：{}", hook, mediaServerItem.getId());
                                 }else {
-                                    log.info("[媒体服务节点-ABL]  设置HOOK {} 失败 ：{}->{}", hook, mediaServerItem.getId(), ablResult.getMemo());
+                                    success = false;
+                                    log.info("[媒体服务节点-ABL]  设置HOOK {} 失败 ：{}->{}", hook, mediaServerItem.getId(), ablResult == null ? "empty response" : ablResult.getMemo());
                                 }
                             }
                         }
                     }
                 }
             }catch (Exception e) {
+                success = false;
                 log.info("[媒体服务节点-ABL]  设置HOOK 失败 ：{}", mediaServerItem.getId(), e);
             }
+        }
+
+        if (matchedHooks != hookUrlArray.length) {
+            log.error("[媒体服务节点-ABL] Hook 字段不完整：{} / {}",
+                    matchedHooks, hookUrlArray.length);
+            success = false;
         }
 
 
@@ -354,6 +418,7 @@ public class ABLMediaServerStatusManger {
 //            log.info("[媒体服务节点] 设置媒体服务节点失败 {} -> {}:{}",
 //                    mediaServerItem.getId(), mediaServerItem.getIp(), mediaServerItem.getHttpPort());
 //        }
+        return success;
     }
 
 }

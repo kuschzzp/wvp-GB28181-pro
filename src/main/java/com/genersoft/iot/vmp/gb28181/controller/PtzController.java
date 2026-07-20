@@ -1,6 +1,7 @@
 package com.genersoft.iot.vmp.gb28181.controller;
 
 
+import com.genersoft.iot.vmp.authorization.video.GbChannelAccessAuthorizer;
 import com.genersoft.iot.vmp.conf.exception.ControllerException;
 import com.genersoft.iot.vmp.conf.security.JwtUtils;
 import com.genersoft.iot.vmp.gb28181.bean.Device;
@@ -16,6 +17,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.Assert;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,7 +29,15 @@ import org.springframework.web.context.request.async.DeferredResult;
 @Slf4j
 @RestController
 @RequestMapping("/api/front-end")
+@PreAuthorize("@authz.check('video:ptz:control')")
 public class PtzController {
+
+	private static final String PTZ_CONTROL_PERMISSION = "video:ptz:control";
+	private static final String PTZ_PRESET_PERMISSION = "video:ptz:preset";
+	private static final String PTZ_CRUISE_PERMISSION = "video:ptz:cruise";
+
+	@Autowired
+	private GbChannelAccessAuthorizer channelAccessAuthorizer;
 
 	@Autowired
 	private SIPCommander cmder;
@@ -50,6 +60,26 @@ public class PtzController {
 	@Parameter(name = "combindCode2", description = "组合码二(对应国标文档指令格式中的字节7, 范围0-15)", required = true)
 	@GetMapping("/common/{deviceId}/{channelId}")
 	public void frontEndCommand(@PathVariable String deviceId,@PathVariable String channelId,Integer cmdCode, Integer parameter1, Integer parameter2, Integer combindCode2){
+		sendFrontEndCommand(
+				PTZ_CONTROL_PERMISSION,
+				deviceId,
+				channelId,
+				cmdCode,
+				parameter1,
+				parameter2,
+				combindCode2);
+	}
+
+	private void sendFrontEndCommand(
+			String permissionCode,
+			String deviceId,
+			String channelId,
+			Integer cmdCode,
+			Integer parameter1,
+			Integer parameter2,
+			Integer combindCode2) {
+		channelAccessAuthorizer.requireGbChannel(
+				permissionCode, deviceId, channelId);
 
 		if (log.isDebugEnabled()) {
 			log.debug(String.format("设备云台控制 API调用，deviceId：%s ，channelId：%s ，cmdCode：%d parameter1：%d parameter2：%d",deviceId, channelId, cmdCode, parameter1, parameter2));
@@ -218,8 +248,11 @@ public class PtzController {
 	@Operation(summary = "查询预置位", security = @SecurityRequirement(name = JwtUtils.HEADER))
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
 	@Parameter(name = "channelId", description = "通道国标编号", required = true)
+	@PreAuthorize("@authz.check('video:ptz:preset')")
 	@GetMapping("/preset/query/{deviceId}/{channelId}")
 	public DeferredResult<WVPResult<Object>> queryPreset(@PathVariable String deviceId, @PathVariable String channelId) {
+		channelAccessAuthorizer.requireGbChannel(
+				PTZ_PRESET_PERMISSION, deviceId, channelId);
 		if (log.isDebugEnabled()) {
 			log.debug("设备预置位查询API调用");
 		}
@@ -241,36 +274,45 @@ public class PtzController {
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
 	@Parameter(name = "channelId", description = "通道国标编号", required = true)
 	@Parameter(name = "presetId", description = "预置位编号(1-255)", required = true)
+	@PreAuthorize("@authz.check('video:ptz:preset')")
 	@GetMapping("/preset/add/{deviceId}/{channelId}")
 	public void addPreset(@PathVariable String deviceId, @PathVariable String channelId, Integer presetId) {
 		if (presetId == null || presetId < 1 || presetId > 255) {
 			throw new ControllerException(ErrorCode.ERROR100.getCode(), "预置位编号必须为1-255之间的数字");
 		}
-		frontEndCommand(deviceId, channelId, 0x81, 1, presetId, 0);
+		sendFrontEndCommand(
+				PTZ_PRESET_PERMISSION,
+				deviceId, channelId, 0x81, 1, presetId, 0);
 	}
 
 	@Operation(summary = "预置位指令-调用预置位", security = @SecurityRequirement(name = JwtUtils.HEADER))
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
 	@Parameter(name = "channelId", description = "通道国标编号", required = true)
 	@Parameter(name = "presetId", description = "预置位编号(1-255)", required = true)
+	@PreAuthorize("@authz.check('video:ptz:preset')")
 	@GetMapping("/preset/call/{deviceId}/{channelId}")
 	public void callPreset(@PathVariable String deviceId, @PathVariable String channelId, Integer presetId) {
 		if (presetId == null || presetId < 1 || presetId > 255) {
 			throw new ControllerException(ErrorCode.ERROR100.getCode(), "预置位编号必须为1-255之间的数字");
 		}
-		frontEndCommand(deviceId, channelId, 0x82, 1, presetId, 0);
+		sendFrontEndCommand(
+				PTZ_PRESET_PERMISSION,
+				deviceId, channelId, 0x82, 1, presetId, 0);
 	}
 
 	@Operation(summary = "预置位指令-删除预置位", security = @SecurityRequirement(name = JwtUtils.HEADER))
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
 	@Parameter(name = "channelId", description = "通道国标编号", required = true)
 	@Parameter(name = "presetId", description = "预置位编号(1-255)", required = true)
+	@PreAuthorize("@authz.check('video:ptz:preset')")
 	@GetMapping("/preset/delete/{deviceId}/{channelId}")
 	public void deletePreset(@PathVariable String deviceId, @PathVariable String channelId, Integer presetId) {
 		if (presetId == null || presetId < 1 || presetId > 255) {
 			throw new ControllerException(ErrorCode.ERROR100.getCode(), "预置位编号必须为1-255之间的数字");
 		}
-		frontEndCommand(deviceId, channelId, 0x83, 1, presetId, 0);
+		sendFrontEndCommand(
+				PTZ_PRESET_PERMISSION,
+				deviceId, channelId, 0x83, 1, presetId, 0);
 	}
 
 	@Operation(summary = "巡航指令-加入巡航点", security = @SecurityRequirement(name = JwtUtils.HEADER))
@@ -278,12 +320,15 @@ public class PtzController {
 	@Parameter(name = "channelId", description = "通道国标编号", required = true)
 	@Parameter(name = "cruiseId", description = "巡航组号(0-255)", required = true)
 	@Parameter(name = "presetId", description = "预置位编号(1-255)", required = true)
+	@PreAuthorize("@authz.check('video:ptz:cruise')")
 	@GetMapping("/cruise/point/add/{deviceId}/{channelId}")
 	public void addCruisePoint(@PathVariable String deviceId, @PathVariable String channelId, Integer cruiseId, Integer presetId) {
 		if (presetId == null || cruiseId == null || presetId < 1 || presetId > 255 || cruiseId < 0 || cruiseId > 255) {
 			throw new ControllerException(ErrorCode.ERROR100.getCode(), "编号必须为1-255之间的数字");
 		}
-		frontEndCommand(deviceId, channelId, 0x84, cruiseId, presetId, 0);
+		sendFrontEndCommand(
+				PTZ_CRUISE_PERMISSION,
+				deviceId, channelId, 0x84, cruiseId, presetId, 0);
 	}
 
 	@Operation(summary = "巡航指令-删除一个巡航点", security = @SecurityRequirement(name = JwtUtils.HEADER))
@@ -291,6 +336,7 @@ public class PtzController {
 	@Parameter(name = "channelId", description = "通道国标编号", required = true)
 	@Parameter(name = "cruiseId", description = "巡航组号(1-255)", required = true)
 	@Parameter(name = "presetId", description = "预置位编号(0-255, 为0时删除整个巡航)", required = true)
+	@PreAuthorize("@authz.check('video:ptz:cruise')")
 	@GetMapping("/cruise/point/delete/{deviceId}/{channelId}")
 	public void deleteCruisePoint(@PathVariable String deviceId, @PathVariable String channelId, Integer cruiseId, Integer presetId) {
 		if (presetId == null || presetId < 0 || presetId > 255) {
@@ -299,7 +345,9 @@ public class PtzController {
 		if (cruiseId == null || cruiseId < 0 || cruiseId > 255) {
 			throw new ControllerException(ErrorCode.ERROR100.getCode(), "巡航组号必须为0-255之间的数字");
 		}
-		frontEndCommand(deviceId, channelId, 0x85, cruiseId, presetId, 0);
+		sendFrontEndCommand(
+				PTZ_CRUISE_PERMISSION,
+				deviceId, channelId, 0x85, cruiseId, presetId, 0);
 	}
 
 	@Operation(summary = "巡航指令-设置巡航速度", security = @SecurityRequirement(name = JwtUtils.HEADER))
@@ -307,6 +355,7 @@ public class PtzController {
 	@Parameter(name = "channelId", description = "通道国标编号", required = true)
 	@Parameter(name = "cruiseId", description = "巡航组号(0-255)", required = true)
 	@Parameter(name = "speed", description = "巡航速度(1-4095)", required = true)
+	@PreAuthorize("@authz.check('video:ptz:cruise')")
 	@GetMapping("/cruise/speed/{deviceId}/{channelId}")
 	public void setCruiseSpeed(@PathVariable String deviceId, @PathVariable String channelId, Integer cruiseId, Integer speed) {
 		if (cruiseId == null || cruiseId < 0 || cruiseId > 255) {
@@ -317,7 +366,9 @@ public class PtzController {
 		}
 		int parameter2 = speed & 0xFF;
 		int combindCode2 =  speed >> 8;
-		frontEndCommand(deviceId, channelId, 0x86, cruiseId, parameter2, combindCode2);
+		sendFrontEndCommand(
+				PTZ_CRUISE_PERMISSION,
+				deviceId, channelId, 0x86, cruiseId, parameter2, combindCode2);
 	}
 
 	@Operation(summary = "巡航指令-设置巡航停留时间", security = @SecurityRequirement(name = JwtUtils.HEADER))
@@ -325,6 +376,7 @@ public class PtzController {
 	@Parameter(name = "channelId", description = "通道国标编号", required = true)
 	@Parameter(name = "cruiseId", description = "巡航组号", required = true)
 	@Parameter(name = "time", description = "巡航停留时间(1-4095)", required = true)
+	@PreAuthorize("@authz.check('video:ptz:cruise')")
 	@GetMapping("/cruise/time/{deviceId}/{channelId}")
 	public void setCruiseTime(@PathVariable String deviceId, @PathVariable String channelId, Integer cruiseId, Integer time) {
 		if (cruiseId == null || cruiseId < 0 || cruiseId > 255) {
@@ -335,79 +387,99 @@ public class PtzController {
 		}
 		int parameter2 = time & 0xFF;
 		int combindCode2 =  time >> 8;
-		frontEndCommand(deviceId, channelId, 0x87, cruiseId, parameter2, combindCode2);
+		sendFrontEndCommand(
+				PTZ_CRUISE_PERMISSION,
+				deviceId, channelId, 0x87, cruiseId, parameter2, combindCode2);
 	}
 
 	@Operation(summary = "巡航指令-开始巡航", security = @SecurityRequirement(name = JwtUtils.HEADER))
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
 	@Parameter(name = "channelId", description = "通道国标编号", required = true)
 	@Parameter(name = "cruiseId", description = "巡航组号)", required = true)
+	@PreAuthorize("@authz.check('video:ptz:cruise')")
 	@GetMapping("/cruise/start/{deviceId}/{channelId}")
 	public void startCruise(@PathVariable String deviceId, @PathVariable String channelId, Integer cruiseId) {
 		if (cruiseId == null || cruiseId < 0 || cruiseId > 255) {
 			throw new ControllerException(ErrorCode.ERROR100.getCode(), "巡航组号必须为0-255之间的数字");
 		}
-		frontEndCommand(deviceId, channelId, 0x88, cruiseId, 0, 0);
+		sendFrontEndCommand(
+				PTZ_CRUISE_PERMISSION,
+				deviceId, channelId, 0x88, cruiseId, 0, 0);
 	}
 
 	@Operation(summary = "巡航指令-停止巡航", security = @SecurityRequirement(name = JwtUtils.HEADER))
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
 	@Parameter(name = "channelId", description = "通道国标编号", required = true)
 	@Parameter(name = "cruiseId", description = "巡航组号", required = true)
+	@PreAuthorize("@authz.check('video:ptz:cruise')")
 	@GetMapping("/cruise/stop/{deviceId}/{channelId}")
 	public void stopCruise(@PathVariable String deviceId, @PathVariable String channelId, Integer cruiseId) {
 		if (cruiseId == null || cruiseId < 0 || cruiseId > 255) {
 			throw new ControllerException(ErrorCode.ERROR100.getCode(), "巡航组号必须为0-255之间的数字");
 		}
-		frontEndCommand(deviceId, channelId, 0, 0, 0, 0);
+		sendFrontEndCommand(
+				PTZ_CRUISE_PERMISSION,
+				deviceId, channelId, 0, 0, 0, 0);
 	}
 
 	@Operation(summary = "扫描指令-开始自动扫描", security = @SecurityRequirement(name = JwtUtils.HEADER))
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
 	@Parameter(name = "channelId", description = "通道国标编号", required = true)
 	@Parameter(name = "scanId", description = "扫描组号(0-255)", required = true)
+	@PreAuthorize("@authz.check('video:ptz:cruise')")
 	@GetMapping("/scan/start/{deviceId}/{channelId}")
 	public void startScan(@PathVariable String deviceId, @PathVariable String channelId, Integer scanId) {
 		if (scanId == null || scanId < 0 || scanId > 255 ) {
 			throw new ControllerException(ErrorCode.ERROR100.getCode(), "扫描组号必须为0-255之间的数字");
 		}
-		frontEndCommand(deviceId, channelId, 0x89, scanId, 0, 0);
+		sendFrontEndCommand(
+				PTZ_CRUISE_PERMISSION,
+				deviceId, channelId, 0x89, scanId, 0, 0);
 	}
 
 	@Operation(summary = "扫描指令-停止自动扫描", security = @SecurityRequirement(name = JwtUtils.HEADER))
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
 	@Parameter(name = "channelId", description = "通道国标编号", required = true)
 	@Parameter(name = "scanId", description = "扫描组号(0-255)", required = true)
+	@PreAuthorize("@authz.check('video:ptz:cruise')")
 	@GetMapping("/scan/stop/{deviceId}/{channelId}")
 	public void stopScan(@PathVariable String deviceId, @PathVariable String channelId, Integer scanId) {
 		if (scanId == null || scanId < 0 || scanId > 255 ) {
 			throw new ControllerException(ErrorCode.ERROR100.getCode(), "扫描组号必须为0-255之间的数字");
 		}
-		frontEndCommand(deviceId, channelId, 0, 0, 0, 0);
+		sendFrontEndCommand(
+				PTZ_CRUISE_PERMISSION,
+				deviceId, channelId, 0, 0, 0, 0);
 	}
 
 	@Operation(summary = "扫描指令-设置自动扫描左边界", security = @SecurityRequirement(name = JwtUtils.HEADER))
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
 	@Parameter(name = "channelId", description = "通道国标编号", required = true)
 	@Parameter(name = "scanId", description = "扫描组号(0-255)", required = true)
+	@PreAuthorize("@authz.check('video:ptz:cruise')")
 	@GetMapping("/scan/set/left/{deviceId}/{channelId}")
 	public void setScanLeft(@PathVariable String deviceId, @PathVariable String channelId, Integer scanId) {
 		if (scanId == null || scanId < 0 || scanId > 255 ) {
 			throw new ControllerException(ErrorCode.ERROR100.getCode(), "扫描组号必须为0-255之间的数字");
 		}
-		frontEndCommand(deviceId, channelId, 0x89, scanId, 1, 0);
+		sendFrontEndCommand(
+				PTZ_CRUISE_PERMISSION,
+				deviceId, channelId, 0x89, scanId, 1, 0);
 	}
 
 	@Operation(summary = "扫描指令-设置自动扫描右边界", security = @SecurityRequirement(name = JwtUtils.HEADER))
 	@Parameter(name = "deviceId", description = "设备国标编号", required = true)
 	@Parameter(name = "channelId", description = "通道国标编号", required = true)
 	@Parameter(name = "scanId", description = "扫描组号(0-255)", required = true)
+	@PreAuthorize("@authz.check('video:ptz:cruise')")
 	@GetMapping("/scan/set/right/{deviceId}/{channelId}")
 	public void setScanRight(@PathVariable String deviceId, @PathVariable String channelId, Integer scanId) {
 		if (scanId == null || scanId < 0 || scanId > 255 ) {
 			throw new ControllerException(ErrorCode.ERROR100.getCode(), "扫描组号必须为0-255之间的数字");
 		}
-		frontEndCommand(deviceId, channelId, 0x89, scanId, 2, 0);
+		sendFrontEndCommand(
+				PTZ_CRUISE_PERMISSION,
+				deviceId, channelId, 0x89, scanId, 2, 0);
 	}
 
 
@@ -416,6 +488,7 @@ public class PtzController {
 	@Parameter(name = "channelId", description = "通道国标编号", required = true)
 	@Parameter(name = "scanId", description = "扫描组号(0-255)", required = true)
 	@Parameter(name = "speed", description = "自动扫描速度(1-4095)", required = true)
+	@PreAuthorize("@authz.check('video:ptz:cruise')")
 	@GetMapping("/scan/set/speed/{deviceId}/{channelId}")
 	public void setScanSpeed(@PathVariable String deviceId, @PathVariable String channelId, Integer scanId, Integer speed) {
 		if (scanId == null || scanId < 0 || scanId > 255 ) {
@@ -426,7 +499,9 @@ public class PtzController {
 		}
 		int parameter2 = speed & 0xFF;
 		int combindCode2 =  speed >> 8;
-		frontEndCommand(deviceId, channelId, 0x8A, scanId, parameter2, combindCode2);
+		sendFrontEndCommand(
+				PTZ_CRUISE_PERMISSION,
+				deviceId, channelId, 0x8A, scanId, parameter2, combindCode2);
 	}
 
 

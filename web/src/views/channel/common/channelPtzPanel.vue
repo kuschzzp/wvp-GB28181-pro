@@ -1,5 +1,5 @@
 <template>
-  <div class="ptz-section">
+  <div v-if="$auth.hasPermi(['video:ptz:control'])" class="ptz-section">
     <ptzControls
       btn-layout="row"
       @ptz-move="onPtzMove"
@@ -8,8 +8,8 @@
       @focus-stop="onFocusStop"
       @iris-move="onIrisMove"
       @iris-stop="onIrisStop"
-      @toggle-drag-zoom="$emit('drag-zoom-start', 'in')"
-      @toggle-drag-zoom-out="$emit('drag-zoom-start', 'out')"
+      @toggle-drag-zoom="emitDragZoom('in')"
+      @toggle-drag-zoom-out="emitDragZoom('out')"
     />
   </div>
 </template>
@@ -25,6 +25,7 @@ export default {
   },
   methods: {
     onPtzMove(e) {
+      if (!this.$auth.hasPermi(['video:ptz:control'])) return
       this.$store.dispatch('commonChanel/ptz', {
         channelId: this.channelId,
         command: e.direction,
@@ -34,6 +35,7 @@ export default {
       })
     },
     onPtzStop() {
+      if (!this.$auth.hasPermi(['video:ptz:control'])) return
       this.$store.dispatch('commonChanel/ptz', {
         channelId: this.channelId,
         command: 'stop',
@@ -43,6 +45,7 @@ export default {
       })
     },
     onFocusMove(e) {
+      if (!this.$auth.hasPermi(['video:ptz:control'])) return
       this.$store.dispatch('commonChanel/focus', {
         channelId: this.channelId,
         command: e.command,
@@ -50,6 +53,7 @@ export default {
       })
     },
     onFocusStop() {
+      if (!this.$auth.hasPermi(['video:ptz:control'])) return
       this.$store.dispatch('commonChanel/focus', {
         channelId: this.channelId,
         command: 'stop',
@@ -57,6 +61,7 @@ export default {
       })
     },
     onIrisMove(e) {
+      if (!this.$auth.hasPermi(['video:ptz:control'])) return
       this.$store.dispatch('commonChanel/iris', {
         channelId: this.channelId,
         command: e.command,
@@ -64,11 +69,16 @@ export default {
       })
     },
     onIrisStop() {
+      if (!this.$auth.hasPermi(['video:ptz:control'])) return
       this.$store.dispatch('commonChanel/iris', {
         channelId: this.channelId,
         command: 'stop',
         speed: 0
       })
+    },
+    emitDragZoom(type) {
+      if (!this.$auth.hasPermi(['video:ptz:control'])) return
+      this.$emit('drag-zoom-start', type)
     }
   }
 }

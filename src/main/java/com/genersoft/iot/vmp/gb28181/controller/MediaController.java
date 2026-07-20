@@ -1,11 +1,13 @@
 package com.genersoft.iot.vmp.gb28181.controller;
 
+import com.genersoft.iot.vmp.authorization.video.StreamResourceAccessAuthorizer;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceRef;
 import com.genersoft.iot.vmp.common.StreamInfo;
 import com.genersoft.iot.vmp.conf.exception.ControllerException;
 import com.genersoft.iot.vmp.conf.security.JwtUtils;
 import com.genersoft.iot.vmp.conf.security.SecurityUtils;
-import com.genersoft.iot.vmp.conf.security.dto.LoginUser;
 import com.genersoft.iot.vmp.media.service.IMediaServerService;
+import com.genersoft.iot.vmp.media.security.PlayableStreamService;
 import com.genersoft.iot.vmp.media.zlm.dto.StreamAuthorityInfo;
 import com.genersoft.iot.vmp.service.bean.ErrorCallback;
 import com.genersoft.iot.vmp.service.bean.InviteErrorCode;
@@ -21,6 +23,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.ObjectUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.request.async.DeferredResult;
@@ -33,7 +36,11 @@ import java.net.URL;
 @RestController
 @Slf4j
 @RequestMapping(value = "/api/media")
+@PreAuthorize("@authz.check('video:channel:play')")
 public class MediaController {
+
+    private static final String CHANNEL_PLAY_PERMISSION =
+            "video:channel:play";
 
     @Autowired
     private IRedisCatchStorage redisCatchStorage;
@@ -43,6 +50,12 @@ public class MediaController {
 
     @Autowired
     private IMediaServerService mediaServerService;
+
+    @Autowired
+    private StreamResourceAccessAuthorizer streamResourceAccessAuthorizer;
+
+    @Autowired
+    private PlayableStreamService playableStreamService;
 
 
     /**
@@ -64,23 +77,17 @@ public class MediaController {
                                                                                 @RequestParam(required = false) String mediaServerId,
                                                                                 @RequestParam(required = false) String callId,
                                                                                 @RequestParam(required = false) Boolean useSourceIpAsStreamIp){
+        VideoResourceRef playableResource = streamResourceAccessAuthorizer.requireAppStream(
+                CHANNEL_PLAY_PERMISSION, app, stream);
         DeferredResult<WVPResult<StreamContent>> result = new DeferredResult<>();
-        boolean authority = false;
         if (callId != null) {
             // 权限校验
             StreamAuthorityInfo streamAuthorityInfo = redisCatchStorage.getStreamAuthorityInfo(app, stream);
             if (streamAuthorityInfo != null
                     && streamAuthorityInfo.getCallId() != null
                     && streamAuthorityInfo.getCallId().equals(callId)) {
-                authority = true;
             }else {
                 throw new ControllerException(ErrorCode.ERROR400.getCode(), "获取播放地址鉴权失败");
-            }
-        }else {
-            // 是否登陆用户, 登陆用户返回完整信息
-            LoginUser userInfo = SecurityUtils.getUserInfo();
-            if (userInfo!= null) {
-                authority = true;
             }
         }
         StreamInfo streamInfo;
@@ -88,14 +95,17 @@ public class MediaController {
             String host = request.getHeader("Host");
             String localAddr = host.split(":")[0];
             log.info("使用{}作为返回流的ip", localAddr);
-            streamInfo = mediaServerService.getStreamInfoByAppAndStreamWithCheck(app, stream, mediaServerId, localAddr, authority);
+            streamInfo = mediaServerService.getStreamInfoByAppAndStreamWithCheck(
+                    app, stream, mediaServerId, localAddr);
         }else {
-            streamInfo = mediaServerService.getStreamInfoByAppAndStreamWithCheck(app, stream, mediaServerId, authority);
+            streamInfo = mediaServerService.getStreamInfoByAppAndStreamWithCheck(
+                    app, stream, mediaServerId);
         }
 
         if (streamInfo != null){
             WVPResult<StreamContent> wvpResult = WVPResult.success();
-            wvpResult.setData(new StreamContent(streamInfo));
+            wvpResult.setData(playableStreamService.publish(
+                    streamInfo, playableResource));
             result.setResult(wvpResult);
         }else {
             ErrorCallback<StreamInfo> callback = (code, msg, streamInfoStoStart) -> {
@@ -115,7 +125,8 @@ public class MediaController {
                             && !"null".equalsIgnoreCase(streamInfoStoStart.getMediaServer().getTranscodeSuffix())) {
                         streamInfoStoStart.setStream(streamInfoStoStart.getStream() + "_" + streamInfoStoStart.getMediaServer().getTranscodeSuffix());
                     }
-                    wvpResult.setData(new StreamContent(streamInfoStoStart));
+                    wvpResult.setData(playableStreamService.publish(
+                            streamInfoStoStart, playableResource));
                     result.setResult(wvpResult);
                 }else {
                     result.setResult(WVPResult.fail(code, msg));
@@ -140,16 +151,13 @@ public class MediaController {
     @Parameter(name = "mediaServerId", description = "媒体服务器id")
     public StreamContent getPlayUrl(@RequestParam String app, @RequestParam String stream,
                                     @RequestParam(required = false) String mediaServerId){
-        boolean authority = false;
-        // 是否登陆用户, 登陆用户返回完整信息
-        LoginUser userInfo = SecurityUtils.getUserInfo();
-        if (userInfo!= null) {
-            authority = true;
-        }
-        StreamInfo streamInfo = mediaServerService.getStreamInfoByAppAndStreamWithCheck(app, stream, mediaServerId, authority);
+        VideoResourceRef playableResource = streamResourceAccessAuthorizer.requireAppStream(
+                CHANNEL_PLAY_PERMISSION, app, stream);
+        StreamInfo streamInfo = mediaServerService.getStreamInfoByAppAndStreamWithCheck(
+                app, stream, mediaServerId);
         if (streamInfo == null){
             throw new ControllerException(ErrorCode.ERROR100.getCode(), "获取播放地址失败");
         }
-        return new StreamContent(streamInfo);
+        return playableStreamService.publish(streamInfo, playableResource);
     }
 }

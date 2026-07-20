@@ -34,7 +34,6 @@
 </template>
 
 <script>
-import crypto from 'crypto'
 export default {
   name: 'ChangePassword',
   props: {},
@@ -75,7 +74,7 @@ export default {
       rules: {
         oldPassword: [{ required: true, validator: validatePass0, trigger: 'blur' }],
         newPassword: [{ required: true, validator: validatePass1, trigger: 'blur' }, {
-          pattern: /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[~!@#$%^&*()_+`\-={}:";'<>?,.\/]).{8,20}$/,
+          pattern: /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z\d\s])\S{8,20}$/,
           message: '密码长度在8-20位之间,由字母+数字+特殊字符组成'
         }],
         confirmPassword: [{ required: true, validator: validatePass2, trigger: 'blur' }]
@@ -91,10 +90,10 @@ export default {
     },
     onSubmit: function() {
       this.$store.dispatch('user/changePassword', {
-        oldPassword: crypto.createHash('md5').update(this.oldPassword, 'utf8').digest('hex'),
+        oldPassword: this.oldPassword,
         password: this.newPassword
       })
-        .then((data) => {
+        .then(() => {
           this.$message({
             showClose: true,
             message: '修改成功，请重新登录',

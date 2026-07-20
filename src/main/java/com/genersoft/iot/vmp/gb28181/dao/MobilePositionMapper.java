@@ -1,10 +1,13 @@
 package com.genersoft.iot.vmp.gb28181.dao;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.gb28181.bean.MobilePosition;
+import com.genersoft.iot.vmp.gb28181.dao.provider.MobilePositionProvider;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.SelectProvider;
 
 import java.util.List;
 
@@ -15,18 +18,19 @@ public interface MobilePositionMapper {
             "VALUES (#{channelId}, #{timestamp}, #{longitude}, #{latitude}, #{altitude}, #{speed}, #{direction}, #{createTime})")
     int insertNewPosition(MobilePosition mobilePosition);
 
-    @Select(value = {" <script>" +
-    "SELECT * FROM wvp_mobile_position" +
-    " WHERE channel_id = #{channelId}" +
-    "<if test=\"startTime != null\"> AND timestamp&gt;=#{startTime}</if>" +
-    "<if test=\"endTime != null\"> AND timestamp&lt;=#{endTime}</if>" +
-    " ORDER BY time ASC" +
-    " </script>"})
-    List<MobilePosition> queryPositionByDeviceIdAndTime(@Param("channelId") Integer channelId, @Param("startTime") Long startTime, @Param("endTime") Long endTime);
+    @SelectProvider(
+            type = MobilePositionProvider.class,
+            method = "queryPositionByDeviceIdAndTime")
+    List<MobilePosition> queryPositionByDeviceIdAndTime(
+            @Param("channelId") Integer channelId,
+            @Param("startTime") Long startTime,
+            @Param("endTime") Long endTime,
+            @Param("scope") VideoScopeQuery scope);
 
-    @Select("SELECT * FROM wvp_mobile_position WHERE channel_id = #{channelId}" +
-            " ORDER BY timestamp DESC LIMIT 1")
-    MobilePosition queryLatestPosition(@Param("channelId") Integer channelId);
+    @SelectProvider(type = MobilePositionProvider.class, method = "queryLatestPosition")
+    MobilePosition queryLatestPosition(
+            @Param("channelId") Integer channelId,
+            @Param("scope") VideoScopeQuery scope);
 
     @Insert("<script> " +
             "<foreach collection='mobilePositions' index='index' item='item' separator=';'> " +

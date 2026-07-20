@@ -46,6 +46,7 @@
         </el-form-item>
         <el-form-item>
           <el-button
+            v-hasPermi="['video:alarm:remove']"
             size="mini"
             type="danger"
             icon="el-icon-delete"
@@ -57,6 +58,7 @@
         </el-form-item>
         <el-form-item>
           <el-button
+            v-hasPermi="['video:alarm:clear']"
             size="mini"
             type="danger"
             plain
@@ -90,18 +92,15 @@
         </el-table-column>
         <el-table-column label="快照" width="100">
           <template v-slot:default="scope">
-            <el-image
+            <secured-image
               v-if="scope.row.snapPath"
-              :src="getSnapUrl(scope.row.id)"
-              :preview-src-list="[getSnapUrl(scope.row.id)]"
+              source-type="alarm"
+              :resource-id="scope.row.id"
               fit="cover"
-              style="width: 64px; height: 48px; cursor: pointer;"
-              lazy
-            >
-              <div slot="error" style="width: 64px; height: 48px; line-height: 48px; text-align: center; color: #c0c4cc; font-size: 12px;">
-                <i class="el-icon-picture-outline" />
-              </div>
-            </el-image>
+              width="64px"
+              height="48px"
+              :lazy="true"
+            />
             <span v-else style="color: #c0c4cc; font-size: 12px;">无</span>
           </template>
         </el-table-column>
@@ -118,12 +117,14 @@
         <el-table-column label="操作" width="150" fixed="right">
           <template v-slot:default="scope">
             <el-button
+              v-hasPermi="['video:record:play']"
               size="medium"
               icon="el-icon-video-play"
               type="text"
               @click="openPlayback(scope.row)"
             >回放</el-button>
             <el-button
+              v-hasPermi="['video:alarm:remove']"
               size="medium"
               icon="el-icon-delete"
               style="color: #f56c6c"
@@ -178,6 +179,7 @@
 
 <script>
 import playerTabs from '../common/playerTabs.vue'
+import SecuredImage from '@/components/SecuredImage'
 
 const ALARM_TYPE_OPTIONS = [
   { value: 'VideoLoss', label: '视频丢失报警' },
@@ -221,7 +223,7 @@ function formatDatetime(ts) {
 
 export default {
   name: 'AlarmManage',
-  components: { playerTabs },
+  components: { playerTabs, SecuredImage },
   data() {
     return {
       alarmList: [],
@@ -279,11 +281,8 @@ export default {
         console.log(error)
       })
     },
-    getSnapUrl(id) {
-      const baseUrl = window.baseUrl ? window.baseUrl : ''
-      return ((process.env.NODE_ENV === 'development') ? process.env.VUE_APP_BASE_API : baseUrl) + `/api/alarm/snap/${id}`
-    },
     openPlayback(row) {
+      if (!this.$auth.hasPermi(['video:record:play'])) return
       if (!row.channelId) {
         this.$message({ showClose: true, message: '该报警无关联通道，无法回放', type: 'warning' })
         return
@@ -310,7 +309,7 @@ export default {
         this.playbackLoading = false
         this.$nextTick(() => {
           if (this.$refs.playbackPlayer) {
-            this.$refs.playbackPlayer.setStreamInfo(data)
+            this.$refs.playbackPlayer.setStreamInfo(data.playable)
           }
         })
       }).catch(err => {
@@ -337,6 +336,7 @@ export default {
       this.currentPlaybackChannelId = null
     },
     deleteSingle(row) {
+      if (!this.$auth.hasPermi(['video:alarm:remove'])) return
       this.$confirm('确定删除该报警记录?', '提示', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
@@ -353,6 +353,7 @@ export default {
       }).catch(() => {})
     },
     deleteSelected() {
+      if (!this.$auth.hasPermi(['video:alarm:remove'])) return
       this.$confirm(`确定删除选中的 ${this.selectedRows.length} 条报警记录?`, '提示', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
@@ -370,6 +371,7 @@ export default {
       }).catch(() => {})
     },
     clearByCondition() {
+      if (!this.$auth.hasPermi(['video:alarm:clear'])) return
       const hasFilter = this.beginTime || this.endTime || this.selectedAlarmTypes.length > 0
       const filterDesc = hasFilter
         ? [

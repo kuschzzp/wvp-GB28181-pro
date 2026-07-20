@@ -43,10 +43,10 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button icon="el-icon-plus" style="margin-right: 1rem;" type="primary" @click="addStream">添加
+          <el-button v-hasPermi="['video:push:add']" icon="el-icon-plus" style="margin-right: 1rem;" type="primary" @click="addStream">添加
           </el-button>
           <el-button-group>
-            <el-button icon="el-icon-upload2" @click="importChannel">
+            <el-button v-hasPermi="['video:push:add']" icon="el-icon-upload2" @click="importChannel">
               通道导入
             </el-button>
             <el-button icon="el-icon-download">
@@ -58,6 +58,7 @@
             </el-button>
           </el-button-group>
           <el-button
+            v-hasPermi="['video:push:remove']"
             icon="el-icon-delete"
             style="margin-left: 1rem;"
             :disabled="multipleSelection.length === 0"
@@ -65,7 +66,7 @@
             @click="batchDel"
           >移除
           </el-button>
-          <el-button icon="el-icon-chicken" @click="buildPushStream">生成推流地址</el-button>
+          <el-button v-hasPermi="['video:push:add']" icon="el-icon-chicken" @click="buildPushStream">生成推流地址</el-button>
         </el-form-item>
         <el-form-item style="float: right;">
           <el-button icon="el-icon-refresh-right" circle @click="refresh()" />
@@ -114,17 +115,26 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" min-width="300" fixed="right">
+        <el-table-column label="操作" min-width="390" fixed="right">
           <template v-slot:default="scope">
-            <el-button size="medium" :loading="scope.row.playLoading" icon="el-icon-video-play" type="text" @click="playPush(scope.row)">播放
+            <el-button v-hasPermi="['video:push:play']" size="medium" :loading="scope.row.playLoading" icon="el-icon-video-play" type="text" @click="playPush(scope.row)">播放
             </el-button>
             <el-divider direction="vertical" />
-            <el-button size="medium" icon="el-icon-delete" type="text" style="color: #f56c6c" @click="deletePush(scope.row.id)">删除</el-button>
+            <el-button
+              v-if="scope.row.pushing"
+              v-hasPermi="['video:push:stop']"
+              size="medium"
+              icon="el-icon-switch-button"
+              type="text"
+              style="color: #e6a23c"
+              @click="stopPush(scope.row)"
+            >停止</el-button>
+            <el-button v-hasPermi="['video:push:remove']" size="medium" icon="el-icon-delete" type="text" style="color: #f56c6c" @click="deletePush(scope.row.id)">删除</el-button>
             <el-divider direction="vertical" />
-            <el-button size="medium" icon="el-icon-position" type="text" @click="edit(scope.row)">
+            <el-button v-hasPermi="['video:push:edit']" size="medium" icon="el-icon-position" type="text" @click="edit(scope.row)">
               编辑
             </el-button>
-            <el-button size="medium" icon="el-icon-cloudy" type="text" @click="queryCloudRecords(scope.row)">云端录像
+            <el-button v-hasPermi="['video:cloud-record:list']" size="medium" icon="el-icon-cloudy" type="text" @click="queryCloudRecords(scope.row)">云端录像
             </el-button>
           </template>
         </el-table-column>
@@ -241,6 +251,7 @@ export default {
     },
 
     playPush: function(row) {
+      if (!this.$auth.hasPermi(['video:push:play'])) return
       row.playLoading = true
       this.$store.dispatch('streamPush/play', row.id)
         .then((data) => {
@@ -256,6 +267,25 @@ export default {
         .finally(() => {
           row.playLoading = false
         })
+    },
+    stopPush: function(row) {
+      if (!this.$auth.hasPermi(['video:push:stop'])) return
+      this.$store.dispatch('streamPush/forceClose', {
+        app: row.app,
+        stream: row.stream
+      }).then(() => {
+        this.$message.success({
+          showClose: true,
+          message: '推流已停止'
+        })
+        this.getPushList()
+      }).catch((error) => {
+        this.$message({
+          showClose: true,
+          message: error,
+          type: 'error'
+        })
+      })
     },
     deletePush: function(id) {
       this.$confirm('确定删除通道?', '提示', {
@@ -292,6 +322,7 @@ export default {
       this.getPushList()
     },
     queryCloudRecords: function(row) {
+      if (!this.$auth.hasPermi(['video:cloud-record:list'])) return
       this.$router.push(`/cloudRecord/detail/${row.app}/${row.stream}`)
     },
     importChannel: function() {
@@ -338,4 +369,3 @@ export default {
   }
 }
 </script>
-

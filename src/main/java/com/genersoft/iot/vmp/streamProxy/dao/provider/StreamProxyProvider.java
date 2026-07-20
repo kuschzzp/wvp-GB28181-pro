@@ -1,5 +1,7 @@
 package com.genersoft.iot.vmp.streamProxy.dao.provider;
 
+import com.genersoft.iot.vmp.authorization.video.VideoListScopeSql;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceType;
 import com.genersoft.iot.vmp.common.enums.ChannelDataType;
 
 import java.util.Map;
@@ -54,7 +56,9 @@ public class StreamProxyProvider {
         if (params.get("mediaServerId") != null) {
             sqlBuild.append(" AND st.media_server_id=#{mediaServerId}");
         }
+        VideoListScopeSql.appendSourceScope(
+                sqlBuild, params, VideoResourceType.STREAM_PROXY, "st", "wdc");
         sqlBuild.append(" order by st.create_time desc");
-        return sqlBuild.toString();
+        return VideoListScopeSql.asScript(sqlBuild.toString());
     }
 }

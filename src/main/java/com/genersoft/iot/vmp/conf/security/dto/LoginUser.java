@@ -1,58 +1,46 @@
 package com.genersoft.iot.vmp.conf.security.dto;
 
-import com.genersoft.iot.vmp.storager.dao.dto.Role;
 import com.genersoft.iot.vmp.storager.dao.dto.User;
-import lombok.Getter;
-import lombok.Setter;
 import org.springframework.security.core.CredentialsContainer;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.SpringSecurityCoreVersion;
 import org.springframework.security.core.userdetails.UserDetails;
 
-import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.List;
 
 public class LoginUser implements UserDetails, CredentialsContainer {
 
     private static final long serialVersionUID = SpringSecurityCoreVersion.SERIAL_VERSION_UID;
 
-    /**
-     * 用户
-     */
-    private User user;
+    private final long id;
+    private final String username;
+    private String password;
+    private final boolean accountNonLocked;
+    private final boolean enabled;
 
-    @Getter
-    @Setter
-    private String accessToken;
-
-    @Setter
-    @Getter
-    private String serverId;
-
-    /**
-     * 登录时间
-     */
-    private LocalDateTime loginTime;
-
-    public LoginUser(User user, LocalDateTime loginTime) {
-        this.user = user;
-        this.loginTime = loginTime;
+    public LoginUser(User user) {
+        this.id = user.getId();
+        this.username = user.getUsername();
+        this.password = user.getPassword();
+        this.accountNonLocked = !user.isLocked();
+        this.enabled = !user.isDeleted() && user.getStatus() == 0;
     }
 
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return null;
+        return List.of();
     }
 
     @Override
     public String getPassword() {
-        return user.getPassword();
+        return password;
     }
 
     @Override
     public String getUsername() {
-        return user.getUsername();
+        return username;
     }
 
     /**
@@ -71,7 +59,7 @@ public class LoginUser implements UserDetails, CredentialsContainer {
      */
     @Override
     public boolean isAccountNonLocked() {
-        return true;
+        return accountNonLocked;
     }
 
     /**
@@ -87,7 +75,7 @@ public class LoginUser implements UserDetails, CredentialsContainer {
      */
     @Override
     public boolean isEnabled() {
-        return true;
+        return enabled;
     }
 
     /**
@@ -95,20 +83,12 @@ public class LoginUser implements UserDetails, CredentialsContainer {
      */
     @Override
     public void eraseCredentials() {
-        user.setPassword(null);
+        password = null;
     }
 
 
-    public int getId() {
-        return user.getId();
-    }
-
-    public Role getRole() {
-        return user.getRole();
-    }
-
-    public String getPushKey() {
-        return user.getPushKey();
+    public long getId() {
+        return id;
     }
 
 }

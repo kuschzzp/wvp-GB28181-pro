@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.gb28181.service;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.common.CommonCallback;
 import com.genersoft.iot.vmp.gb28181.bean.*;
 import com.genersoft.iot.vmp.service.bean.ErrorCallback;
@@ -93,7 +94,7 @@ public interface IDeviceService {
      */
     List<Device> getAllOnlineDevice(String serverId);
 
-    List<Device> getAllByStatus(Boolean status);
+    List<Device> getAllByStatus(Boolean status, VideoScopeQuery scope);
 
     /**
      * 检查设备状态
@@ -148,14 +149,19 @@ public interface IDeviceService {
      * 获取统计信息
      * @return
      */
-    ResourceBaseInfo getOverview();
+    ResourceBaseInfo getOverview(VideoScopeQuery scope);
 
     /**
      * 获取所有设备
      */
     List<Device> getAll();
 
-    PageInfo<Device> getAll(int page, int count, String query, Boolean status);
+    PageInfo<Device> getAll(
+            int page,
+            int count,
+            String query,
+            Boolean status,
+            VideoScopeQuery scope);
 
     Device getDevice(Integer gbDeviceDbId);
 

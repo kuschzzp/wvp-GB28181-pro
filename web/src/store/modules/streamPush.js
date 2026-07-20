@@ -1,4 +1,14 @@
-import { saveToGb, add, update, queryList, play, remove, removeFormGb, batchRemove } from '@/api/streamPush'
+import {
+  saveToGb,
+  add,
+  update,
+  queryList,
+  play,
+  forceClose as forceCloseStream,
+  remove,
+  removeFormGb,
+  batchRemove
+} from '@/api/streamPush'
 
 const actions = {
   saveToGb({ commit }, formData) {
@@ -51,6 +61,16 @@ const actions = {
       })
     })
   },
+  forceClose({ commit }, { app, stream }) {
+    return new Promise((resolve, reject) => {
+      forceCloseStream(app, stream).then(response => {
+        const { data } = response
+        resolve(data)
+      }).catch(error => {
+        reject(error)
+      })
+    })
+  },
   remove({ commit }, id) {
     return new Promise((resolve, reject) => {
       remove(id).then(response => {
@@ -87,4 +107,3 @@ export default {
   namespaced: true,
   actions
 }
-

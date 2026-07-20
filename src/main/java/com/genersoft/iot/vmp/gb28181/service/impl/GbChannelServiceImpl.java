@@ -1,6 +1,10 @@
 package com.genersoft.iot.vmp.gb28181.service.impl;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.genersoft.iot.vmp.authorization.video.VideoResourceLifecycleService;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceRef;
+import com.genersoft.iot.vmp.authorization.video.model.VideoResourceType;
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import com.genersoft.iot.vmp.common.VideoManagerConstants;
 import com.genersoft.iot.vmp.common.enums.ChannelDataType;
 import com.genersoft.iot.vmp.conf.DynamicTask;
@@ -79,13 +83,17 @@ public class GbChannelServiceImpl implements IGbChannelService {
     @Autowired
     private VectorTileCatch vectorTileCatch;
 
+    @Autowired
+    private VideoResourceLifecycleService resourceLifecycleService;
+
     private final GeometryFactory geometryFactory = new GeometryFactory();
 
 
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady() {
         // 启动时重新发布抽稀图层
-        List<CommonGBChannel> channelList = commonGBChannelMapper.queryAllWithPosition();
+        List<CommonGBChannel> channelList = commonGBChannelMapper
+                .queryAllWithPositionForInternalMaintenance();
         Map<Integer, List<CommonGBChannel>> zoomCameraMap = new ConcurrentHashMap<>();
 
         channelList.stream().forEach(commonGBChannel ->  {
@@ -145,6 +153,11 @@ public class GbChannelServiceImpl implements IGbChannelService {
     @Override
     @Transactional
     public int delete(int gbId) {
+        if (gbId <= 0) {
+            return 0;
+        }
+        resourceLifecycleService.remove(new VideoResourceRef(
+                VideoResourceType.CHANNEL, gbId));
         // 移除国标级联关联的信息
         try {
             platformChannelService.removeChannel(gbId);
@@ -168,13 +181,29 @@ public class GbChannelServiceImpl implements IGbChannelService {
     @Override
     @Transactional
     public void delete(Collection<Integer> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Integer> normalizedIds = new LinkedHashSet<>();
+        for (Integer id : ids) {
+            if (id != null && id > 0) {
+                normalizedIds.add(id);
+            }
+        }
+        if (normalizedIds.isEmpty()) {
+            return;
+        }
+        resourceLifecycleService.removeAll(normalizedIds.stream()
+                .map(id -> new VideoResourceRef(VideoResourceType.CHANNEL, id))
+                .toList());
         // 移除国标级联关联的信息
         try {
-            platformChannelService.removeChannels(new ArrayList<>(ids));
+            platformChannelService.removeChannels(new ArrayList<>(normalizedIds));
         }catch (Exception e) {
             log.error("[移除通道国标级联共享失败]", e);
         }
-        List<CommonGBChannel> channelListInDb = commonGBChannelMapper.queryByIds(ids);
+        List<CommonGBChannel> channelListInDb =
+                commonGBChannelMapper.queryByIds(normalizedIds);
         if (channelListInDb.isEmpty()) {
             return;
         }
@@ -470,26 +499,44 @@ public class GbChannelServiceImpl implements IGbChannelService {
     }
 
     @Override
-    public PageInfo<CommonGBChannel> queryListByCivilCode(int page, int count, String query, Boolean online, Integer channelType, String civilCode) {
+    public PageInfo<CommonGBChannel> queryListByCivilCode(
+            int page,
+            int count,
+            String query,
+            Boolean online,
+            Integer channelType,
+            String civilCode,
+            VideoScopeQuery scope) {
+        Objects.requireNonNull(scope, "scope must not be null");
         PageHelper.startPage(page, count);
         if (query != null) {
             query = query.replaceAll("/", "//")
                     .replaceAll("%", "/%")
                     .replaceAll("_", "/_");
         }
-        List<CommonGBChannel> all = commonGBChannelMapper.queryListByCivilCode(query, online, channelType, civilCode);
+        List<CommonGBChannel> all = commonGBChannelMapper.queryListByCivilCode(
+                query, online, channelType, civilCode, scope);
         return new PageInfo<>(all);
     }
 
     @Override
-    public PageInfo<CommonGBChannel> queryListByParentId(int page, int count, String query, Boolean online, Integer channelType, String groupDeviceId) {
+    public PageInfo<CommonGBChannel> queryListByParentId(
+            int page,
+            int count,
+            String query,
+            Boolean online,
+            Integer channelType,
+            String groupDeviceId,
+            VideoScopeQuery scope) {
+        Objects.requireNonNull(scope, "scope must not be null");
         PageHelper.startPage(page, count);
         if (query != null) {
             query = query.replaceAll("/", "//")
                     .replaceAll("%", "/%")
                     .replaceAll("_", "/_");
         }
-        List<CommonGBChannel> all = commonGBChannelMapper.queryListByParentId(query, online, channelType, groupDeviceId);
+        List<CommonGBChannel> all = commonGBChannelMapper.queryListByParentId(
+                query, online, channelType, groupDeviceId, scope);
         return new PageInfo<>(all);
     }
 
@@ -525,18 +572,24 @@ public class GbChannelServiceImpl implements IGbChannelService {
 
     @Override
     @Transactional
-    public void deleteChannelToRegion(String civilCode, List<Integer> channelIds) {
+    public void deleteChannelToRegion(
+            String civilCode,
+            List<Integer> channelIds,
+            VideoScopeQuery scope) {
+        Objects.requireNonNull(scope, "scope must not be null");
         if (!ObjectUtils.isEmpty(civilCode)) {
-            deleteChannelToRegionByCivilCode(civilCode);
+            deleteChannelToRegionByCivilCode(civilCode, scope);
         }
         if (!ObjectUtils.isEmpty(channelIds)) {
             deleteChannelToRegionByChannelIds(channelIds);
         }
     }
 
-    @Override
-    public void deleteChannelToRegionByCivilCode(String civilCode) {
-        List<CommonGBChannel> channelList = commonGBChannelMapper.queryByCivilCode(civilCode);
+    private void deleteChannelToRegionByCivilCode(
+            String civilCode,
+            VideoScopeQuery scope) {
+        List<CommonGBChannel> channelList = commonGBChannelMapper
+                .queryListByCivilCode(null, null, null, civilCode, scope);
         if (channelList.isEmpty()) {
             throw new ControllerException(ErrorCode.ERROR100.getCode(), "所有通道Id不存在");
         }
@@ -560,8 +613,7 @@ public class GbChannelServiceImpl implements IGbChannelService {
 //        }
     }
 
-    @Override
-    public void deleteChannelToRegionByChannelIds(List<Integer> channelIds) {
+    private void deleteChannelToRegionByChannelIds(List<Integer> channelIds) {
         List<CommonGBChannel> channelList = commonGBChannelMapper.queryByIds(channelIds);
         if (channelList.isEmpty()) {
             throw new ControllerException(ErrorCode.ERROR100.getCode(), "所有通道Id不存在");
@@ -705,8 +757,23 @@ public class GbChannelServiceImpl implements IGbChannelService {
     }
 
     @Override
-    public void deleteChannelToGroup(String parentId, String businessGroup, List<Integer> channelIds) {
-        List<CommonGBChannel> channelList = commonGBChannelMapper.queryByIds(channelIds);
+    public void deleteChannelToGroup(
+            String parentId,
+            String businessGroup,
+            List<Integer> channelIds,
+            VideoScopeQuery scope) {
+        Objects.requireNonNull(scope, "scope must not be null");
+        List<CommonGBChannel> channelList;
+        if (ObjectUtils.isEmpty(channelIds)) {
+            channelList = commonGBChannelMapper.queryListByParentId(
+                            null, null, null, parentId, scope)
+                    .stream()
+                    .filter(channel -> Objects.equals(
+                            channel.getGbBusinessGroupId(), businessGroup))
+                    .toList();
+        } else {
+            channelList = commonGBChannelMapper.queryByIds(channelIds);
+        }
         if (channelList.isEmpty()) {
             throw new ControllerException(ErrorCode.ERROR100.getCode(), "所有通道Id不存在");
         }
@@ -802,62 +869,98 @@ public class GbChannelServiceImpl implements IGbChannelService {
 
     @Override
     public PageInfo<CommonGBChannel> queryList(int page, int count, String query, Boolean online, Boolean hasRecordPlan,
-                                               Integer channelType, String civilCode, String parentDeviceId) {
+                                               Integer channelType, String civilCode, String parentDeviceId,
+                                               VideoScopeQuery scope) {
+        Objects.requireNonNull(scope, "scope must not be null");
         PageHelper.startPage(page, count);
         if (query != null) {
             query = query.replaceAll("/", "//")
                     .replaceAll("%", "/%")
                     .replaceAll("_", "/_");
         }
-        List<CommonGBChannel> all = commonGBChannelMapper.queryList(query, online,  hasRecordPlan, channelType, civilCode, parentDeviceId);
+        List<CommonGBChannel> all = commonGBChannelMapper.queryList(
+                query, online, hasRecordPlan, channelType, civilCode, parentDeviceId, scope);
         return new PageInfo<>(all);
     }
 
     @Override
-    public PageInfo<CommonGBChannel> queryListByCivilCodeForUnusual(int page, int count, String query, Boolean online, Integer channelType) {
+    public PageInfo<CommonGBChannel> queryListByCivilCodeForUnusual(
+            int page,
+            int count,
+            String query,
+            Boolean online,
+            Integer channelType,
+            VideoScopeQuery scope) {
+        Objects.requireNonNull(scope, "scope must not be null");
         PageHelper.startPage(page, count);
         if (query != null) {
             query = query.replaceAll("/", "//")
                     .replaceAll("%", "/%")
                     .replaceAll("_", "/_");
         }
-        List<CommonGBChannel> all = commonGBChannelMapper.queryListByCivilCodeForUnusual(query, online, channelType);
+        List<CommonGBChannel> all = commonGBChannelMapper
+                .queryListByCivilCodeForUnusual(
+                        query, online, channelType, scope);
         return new PageInfo<>(all);
     }
 
     @Override
-    public void clearChannelCivilCode(Boolean all, List<Integer> channelIds) {
-
+    public void clearChannelCivilCode(
+            Boolean all,
+            List<Integer> channelIds,
+            VideoScopeQuery scope) {
+        Objects.requireNonNull(scope, "scope must not be null");
         List<Integer> channelIdsForClear;
         if (all != null && all) {
-            channelIdsForClear = commonGBChannelMapper.queryAllForUnusualCivilCode();
+            channelIdsForClear = commonGBChannelMapper
+                    .queryAllForUnusualCivilCode(scope);
         }else {
             channelIdsForClear = channelIds;
         }
-        commonGBChannelMapper.removeCivilCodeByChannelIds(channelIdsForClear);
+        if (!ObjectUtils.isEmpty(channelIdsForClear)) {
+            commonGBChannelMapper.removeCivilCodeByChannelIds(
+                    channelIdsForClear);
+        }
     }
 
     @Override
-    public PageInfo<CommonGBChannel> queryListByParentForUnusual(int page, int count, String query, Boolean online, Integer channelType) {
+    public PageInfo<CommonGBChannel> queryListByParentForUnusual(
+            int page,
+            int count,
+            String query,
+            Boolean online,
+            Integer channelType,
+            VideoScopeQuery scope) {
+        Objects.requireNonNull(scope, "scope must not be null");
         PageHelper.startPage(page, count);
         if (query != null) {
             query = query.replaceAll("/", "//")
                     .replaceAll("%", "/%")
                     .replaceAll("_", "/_");
         }
-        List<CommonGBChannel> all = commonGBChannelMapper.queryListByParentForUnusual(query, online, channelType);
+        List<CommonGBChannel> all = commonGBChannelMapper
+                .queryListByParentForUnusual(
+                        query, online, channelType, scope);
         return new PageInfo<>(all);
     }
 
     @Override
-    public void clearChannelParent(Boolean all, List<Integer> channelIds) {
+    public void clearChannelParent(
+            Boolean all,
+            List<Integer> channelIds,
+            VideoScopeQuery scope) {
+        Objects.requireNonNull(scope, "scope must not be null");
         List<Integer> channelIdsForClear;
         if (all != null && all) {
-            channelIdsForClear = commonGBChannelMapper.queryAllForUnusualParent();
+            channelIdsForClear = commonGBChannelMapper
+                    .queryAllForUnusualParent(scope);
         }else {
             channelIdsForClear = channelIds;
         }
-        commonGBChannelMapper.removeParentIdByChannelIds(channelIdsForClear);
+        if (!ObjectUtils.isEmpty(channelIdsForClear)) {
+            commonGBChannelMapper.removeParentIdByChannelIds(
+                    channelIdsForClear);
+        }
     }
 
     @Override
@@ -902,13 +1005,20 @@ public class GbChannelServiceImpl implements IGbChannelService {
     }
 
     @Override
-    public List<CommonGBChannel> queryListForMap(String query, Boolean online, Boolean hasRecordPlan, Integer channelType) {
+    public List<CommonGBChannel> queryListForMap(
+            String query,
+            Boolean online,
+            Boolean hasRecordPlan,
+            Integer channelType,
+            VideoScopeQuery scope) {
+        Objects.requireNonNull(scope, "scope must not be null");
         if (query != null) {
             query = query.replaceAll("/", "//")
                     .replaceAll("%", "/%")
                     .replaceAll("_", "/_");
         }
-        return commonGBChannelMapper.queryList(query, online,  hasRecordPlan, channelType, null, null);
+        return commonGBChannelMapper.queryList(
+                query, online, hasRecordPlan, channelType, null, null, scope);
     }
 
     @Override
@@ -922,7 +1032,13 @@ public class GbChannelServiceImpl implements IGbChannelService {
     }
 
     @Override
-    public byte[] getTile(int z, int x, int y, String geoCoordSys) {
+    public byte[] getTile(
+            int z,
+            int x,
+            int y,
+            String geoCoordSys,
+            VideoScopeQuery scope) {
+        Objects.requireNonNull(scope, "scope must not be null");
         double minLon = TileUtils.tile2lon(x, z);
         double maxLon = TileUtils.tile2lon(x + 1, z);
         double maxLat = TileUtils.tile2lat(y, z);
@@ -940,7 +1056,9 @@ public class GbChannelServiceImpl implements IGbChannelService {
             }
         }
         // 从数据库查询对应的数据
-        List<CommonGBChannel> channelList = commonGBChannelMapper.queryCameraChannelInBox(minLon, maxLon, minLat, maxLat);
+        List<CommonGBChannel> channelList = commonGBChannelMapper
+                .queryCameraChannelInBox(
+                        minLon, maxLon, minLat, maxLat, scope);
         VectorTileEncoder encoder = new VectorTileEncoder();
         if (!channelList.isEmpty()) {
             channelList.forEach(commonGBChannel -> {
@@ -982,15 +1100,21 @@ public class GbChannelServiceImpl implements IGbChannelService {
 
 
     @Override
-    public String drawThin(Map<Integer, Double> zoomParam, Extent extent, String geoCoordSys) {
+    public String drawThin(
+            Map<Integer, Double> zoomParam,
+            Extent extent,
+            String geoCoordSys,
+            VideoScopeQuery scope) {
+        Objects.requireNonNull(scope, "scope must not be null");
         long time = System.currentTimeMillis();
 
-        String id = UUID.randomUUID().toString();
+        String id = scope.principalId() + "_" + UUID.randomUUID();
         List<CommonGBChannel> channelListInExtent;
         if (extent == null) {
             log.info("[抽稀] ID: {}, 未设置范围，从数据库读取摄像头的范围", id);
-            extent = commonGBChannelMapper.queryExtent();
-            channelListInExtent = commonGBChannelMapper.queryAllWithPosition();
+            channelListInExtent = commonGBChannelMapper
+                    .queryAllWithPosition(scope);
+            extent = extentOf(channelListInExtent);
         }else {
             if (geoCoordSys != null && geoCoordSys.equalsIgnoreCase("GCJ02")) {
                 Double[] maxPosition = Coordtransform.GCJ02ToWGS84(extent.getMaxLng(), extent.getMaxLat());
@@ -1003,7 +1127,12 @@ public class GbChannelServiceImpl implements IGbChannelService {
                 extent.setMinLat(minPosition[1]);
             }
             // 获取数据源
-            channelListInExtent = commonGBChannelMapper.queryListInExtent(extent.getMinLng(), extent.getMaxLng(), extent.getMinLat(), extent.getMaxLat());
+            channelListInExtent = commonGBChannelMapper.queryListInExtent(
+                    extent.getMinLng(),
+                    extent.getMaxLng(),
+                    extent.getMinLat(),
+                    extent.getMaxLat(),
+                    scope);
         }
         Assert.isTrue(!channelListInExtent.isEmpty(), "通道数据为空");
 
@@ -1108,6 +1237,32 @@ public class GbChannelServiceImpl implements IGbChannelService {
         }, 1);
 
         return id;
+    }
+
+    private Extent extentOf(List<CommonGBChannel> channels) {
+        Assert.isTrue(!channels.isEmpty(), "通道数据为空");
+        Extent extent = new Extent();
+        extent.setMinLng(channels.stream()
+                .map(CommonGBChannel::getGbLongitude)
+                .filter(Objects::nonNull)
+                .min(Double::compareTo)
+                .orElseThrow());
+        extent.setMaxLng(channels.stream()
+                .map(CommonGBChannel::getGbLongitude)
+                .filter(Objects::nonNull)
+                .max(Double::compareTo)
+                .orElseThrow());
+        extent.setMinLat(channels.stream()
+                .map(CommonGBChannel::getGbLatitude)
+                .filter(Objects::nonNull)
+                .min(Double::compareTo)
+                .orElseThrow());
+        extent.setMaxLat(channels.stream()
+                .map(CommonGBChannel::getGbLatitude)
+                .filter(Objects::nonNull)
+                .max(Double::compareTo)
+                .orElseThrow());
+        return extent;
     }
 
     private void saveTile(String id, int z, String geoCoordSys, Collection<CommonGBChannel> commonGBChannelList ) {

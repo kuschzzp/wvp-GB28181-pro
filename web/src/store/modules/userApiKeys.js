@@ -1,7 +1,16 @@
-import { add, disable, enable, queryList, remark, remove, reset } from '@/api/userApiKey'
+import {
+  add,
+  disable,
+  enable,
+  queryList,
+  remark,
+  remove,
+  reset,
+  updateScope
+} from '@/api/userApiKey'
 
 const actions = {
-  remark({ commit }, params) {
+  remark(context, params) {
     return new Promise((resolve, reject) => {
       remark(params).then(response => {
         const { data } = response
@@ -11,7 +20,7 @@ const actions = {
       })
     })
   },
-  queryList({ commit }, params) {
+  queryList(context, params) {
     return new Promise((resolve, reject) => {
       queryList(params).then(response => {
         const { data } = response
@@ -21,7 +30,7 @@ const actions = {
       })
     })
   },
-  enable({ commit }, id) {
+  enable(context, id) {
     return new Promise((resolve, reject) => {
       enable(id).then(response => {
         const { data } = response
@@ -31,7 +40,7 @@ const actions = {
       })
     })
   },
-  disable({ commit }, id) {
+  disable(context, id) {
     return new Promise((resolve, reject) => {
       disable(id).then(response => {
         const { data } = response
@@ -41,7 +50,7 @@ const actions = {
       })
     })
   },
-  reset({ commit }, id) {
+  reset(context, id) {
     return new Promise((resolve, reject) => {
       reset(id).then(response => {
         const { data } = response
@@ -51,7 +60,7 @@ const actions = {
       })
     })
   },
-  remove({ commit }, id) {
+  remove(context, id) {
     return new Promise((resolve, reject) => {
       remove(id).then(response => {
         const { data } = response
@@ -61,9 +70,19 @@ const actions = {
       })
     })
   },
-  add({ commit }, params) {
+  add(context, params) {
     return new Promise((resolve, reject) => {
       add(params).then(response => {
+        const { data } = response
+        resolve(data)
+      }).catch(error => {
+        reject(error)
+      })
+    })
+  },
+  updateScope(context, params) {
+    return new Promise((resolve, reject) => {
+      updateScope(params).then(response => {
         const { data } = response
         resolve(data)
       }).catch(error => {
@@ -77,4 +96,3 @@ export default {
   namespaced: true,
   actions
 }
-

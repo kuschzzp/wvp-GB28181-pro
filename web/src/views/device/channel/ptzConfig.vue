@@ -4,23 +4,23 @@
     <div class="ptz-config-body">
       <div class="config-sidebar">
         <el-menu :default-active="activeTab" @select="handleMenuSelect">
-          <el-menu-item index="preset">
+          <el-menu-item v-if="$auth.hasPermi(['video:ptz:preset'])" index="preset">
             <i class="iconfont icon-yuzhidian" style="margin-right: 8px" />
             <span>预置点</span>
           </el-menu-item>
-          <el-menu-item index="cruise">
+          <el-menu-item v-if="$auth.hasPermi(['video:ptz:cruise'])" index="cruise">
             <i class="iconfont icon-xunhuan" style="margin-right: 8px" />
             <span>巡航组</span>
           </el-menu-item>
-          <el-menu-item index="scan">
+          <el-menu-item v-if="$auth.hasPermi(['video:ptz:cruise'])" index="scan">
             <i class="iconfont icon-slider-right" style="margin-right: 8px" />
             <span>线性扫描</span>
           </el-menu-item>
-          <el-menu-item index="guard">
+          <el-menu-item v-if="$auth.hasPermi(['video:ptz:control'])" index="guard">
             <i class="iconfont icon-kanshouwei" style="margin-right: 8px" />
             <span>看守位</span>
           </el-menu-item>
-          <el-menu-item index="switch">
+          <el-menu-item v-if="$auth.hasPermi(['video:ptz:control'])" index="switch">
             <i class="iconfont icon-yushua" style="margin-right: 8px" />
             <span>辅助开关</span>
           </el-menu-item>
@@ -31,6 +31,13 @@
           <playerPtzPanel :device-id="deviceId" :channel-device-id="channelDeviceId" />
         </div>
         <div class="tab-panel">
+          <el-alert
+            v-if="!activeTab"
+            title="当前账号没有可用的云台配置权限"
+            type="info"
+            :closable="false"
+            show-icon
+          />
           <ptzPresetConfig v-if="activeTab === 'preset'" :device-id="deviceId" :channel-device-id="channelDeviceId" />
           <ptzCruiseConfig v-if="activeTab === 'cruise'" :device-id="deviceId" :channel-device-id="channelDeviceId" />
           <ptzScanConfig v-if="activeTab === 'scan'" :device-id="deviceId" :channel-device-id="channelDeviceId" />
@@ -59,12 +66,34 @@ export default {
   },
   data() {
     return {
-      activeTab: 'preset'
+      activeTab: ''
     }
   },
+  created() {
+    this.activeTab = this.firstPermittedTab()
+  },
   methods: {
+    permissionForTab(index) {
+      const permissions = {
+        preset: ['video:ptz:preset'],
+        cruise: ['video:ptz:cruise'],
+        scan: ['video:ptz:cruise'],
+        guard: ['video:ptz:control'],
+        switch: ['video:ptz:control']
+      }
+      return permissions[index] || []
+    },
+    canUseTab(index) {
+      const permissions = this.permissionForTab(index)
+      return permissions.length > 0 && this.$auth.hasPermi(permissions)
+    },
+    firstPermittedTab() {
+      return ['preset', 'cruise', 'scan', 'guard', 'switch'].find(index => this.canUseTab(index)) || ''
+    },
     handleMenuSelect(index) {
-      this.activeTab = index
+      if (this.canUseTab(index)) {
+        this.activeTab = index
+      }
     }
   }
 }

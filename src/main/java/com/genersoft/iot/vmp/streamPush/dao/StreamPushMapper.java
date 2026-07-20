@@ -1,8 +1,12 @@
 package com.genersoft.iot.vmp.streamPush.dao;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
+import com.genersoft.iot.vmp.authorization.video.provider.VideoOverviewProvider;
 import com.genersoft.iot.vmp.common.enums.ChannelDataType;
 import com.genersoft.iot.vmp.streamPush.bean.StreamPush;
 import com.genersoft.iot.vmp.service.bean.StreamPushItemFromRedis;
+import com.genersoft.iot.vmp.streamPush.dao.provider.StreamPushProvider;
+import com.genersoft.iot.vmp.vmanager.bean.ResourceBaseInfo;
 import org.apache.ibatis.annotations.*;
 import org.springframework.stereotype.Repository;
 
@@ -13,6 +17,9 @@ import java.util.Set;
 @Mapper
 @Repository
 public interface StreamPushMapper {
+
+    @SelectProvider(type = VideoOverviewProvider.class, method = "pushOverview")
+    ResourceBaseInfo getOverview(@Param("scope") VideoScopeQuery scope);
 
     Integer dataType = ChannelDataType.GB28181;
 
@@ -39,26 +46,18 @@ public interface StreamPushMapper {
     @Delete("DELETE FROM wvp_stream_push WHERE id=#{id}")
     int del(@Param("id") int id);
 
-    @Select(value = {" <script>" +
-            " SELECT " +
-            " st.*, " +
-            " st.id as data_device_id, " +
-            " wdc.*, " +
-            " wdc.id as gb_id" +
-            " from " +
-            " wvp_stream_push st " +
-            " LEFT join wvp_device_channel wdc " +
-            " on wdc.data_type = 2 and st.id = wdc.data_device_id " +
-            " WHERE " +
-            " 1=1 " +
-            " <if test='query != null'> AND (st.app LIKE concat('%',#{query},'%') escape '/' OR st.stream LIKE concat('%',#{query},'%') escape '/' " +
-            " OR wdc.gb_device_id LIKE concat('%',#{query},'%') escape '/' OR wdc.gb_name LIKE concat('%',#{query},'%') escape '/')</if> " +
-            " <if test='pushing == true' > AND st.pushing=true</if>" +
-            " <if test='pushing == false' > AND st.pushing=false </if>" +
-            " <if test='mediaServerId != null' > AND st.media_server_id=#{mediaServerId} </if>" +
-            " order by st.pushing desc, st.create_time desc" +
-            " </script>"})
-    List<StreamPush> selectAll(@Param("query") String query, @Param("pushing") Boolean pushing, @Param("mediaServerId") String mediaServerId);
+    @SelectProvider(type = StreamPushProvider.class, method = "selectAll")
+    List<StreamPush> selectAll(
+            @Param("query") String query,
+            @Param("pushing") Boolean pushing,
+            @Param("mediaServerId") String mediaServerId,
+            @Param("scope") VideoScopeQuery scope);
+
+    @SelectProvider(type = StreamPushProvider.class, method = "selectAllForInternalMaintenance")
+    List<StreamPush> selectAllForInternalMaintenance(
+            @Param("query") String query,
+            @Param("pushing") Boolean pushing,
+            @Param("mediaServerId") String mediaServerId);
 
     @Select("SELECT st.*, st.id as data_device_id, wdc.*, wdc.id as gb_id FROM wvp_stream_push st LEFT join wvp_device_channel wdc on  wdc.data_type = 2 and st.id = wdc.data_device_id WHERE st.app=#{app} AND st.stream=#{stream}")
     StreamPush selectByAppAndStream(@Param("app") String app, @Param("stream") String stream);

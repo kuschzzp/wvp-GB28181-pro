@@ -1,0 +1,28 @@
+# Example only. Do not use until every REPLACE_WITH value is replaced.
+# Topology: the server is reachable through a direct/fixed public IPv4 address.
+# wvp.example.com must resolve to the public IP and match the TLS certificate.
+# Both example values are documentation-only and must be replaced.
+
+MediaRtmp=10001
+MediaRtsp=10002
+MediaRtp=10003
+
+API_KEY_PEPPER=REPLACE_WITH_RANDOM_64_HEX_CHARS
+MEDIA_HOOK_SECRET_PEPPER=REPLACE_WITH_A_DIFFERENT_RANDOM_64_HEX_CHARS
+
+WebHttp=8080
+# Record-only/reserved in the current Compose. The real media TLS entry must
+# listen on 443 as described in chapter 07.
+WebHttps=443
+
+Stream_IP=wvp.example.com
+SDP_IP=203.0.113.20
+SIP_ShowIP=203.0.113.20
+
+SIP_Port=8160
+SIP_Domain=REPLACE_WITH_10_DIGIT_GB28181_DOMAIN
+SIP_Id=REPLACE_WITH_20_DIGIT_PLATFORM_ID
+SIP_Password=REPLACE_WITH_DEVICE_COMPATIBLE_RANDOM_PASSWORD
+
+RecordSip=false
+RecordPushLive=false

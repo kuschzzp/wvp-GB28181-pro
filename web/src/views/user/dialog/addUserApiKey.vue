@@ -3,7 +3,8 @@
     <el-dialog
       v-el-drag-dialog
       title="添加ApiKey"
-      width="40%"
+      width="820px"
+      custom-class="api-key-scope-dialog"
       top="2rem"
       :close-on-click-modal="false"
       :visible.sync="showDialog"
@@ -11,22 +12,28 @@
       @close="close()"
     >
       <div id="shared" style="margin-right: 20px;">
-        <el-form ref="formRef" :model="form" :rules="rules" status-icon label-width="80px">
-          <el-form-item label="应用名" prop="app">
-            <el-input
-              v-model="form.app"
-              property="app"
-              autocomplete="off"
-            />
-          </el-form-item>
-          <el-form-item label="启用状态" prop="enable" style="text-align: left">
-            <el-switch
-              v-model="form.enable"
-              property="enable"
-              active-text="启用"
-              inactive-text="停用"
-            />
-          </el-form-item>
+        <el-form ref="formRef" :model="form" :rules="rules" status-icon label-width="88px">
+          <el-row :gutter="16">
+            <el-col :xs="24" :sm="12">
+              <el-form-item label="应用名" prop="app">
+                <el-input
+                  v-model="form.app"
+                  property="app"
+                  autocomplete="off"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12">
+              <el-form-item label="启用状态" prop="enable" style="text-align: left">
+                <el-switch
+                  v-model="form.enable"
+                  property="enable"
+                  active-text="启用"
+                  inactive-text="停用"
+                />
+              </el-form-item>
+            </el-col>
+          </el-row>
           <el-form-item label="过期时间" prop="expiresAt" style="text-align: left">
             <el-date-picker
               v-model="form.expiresAt"
@@ -44,14 +51,18 @@
               type="textarea"
               property="remark"
               autocomplete="off"
-              :autosize="{ minRows: 5}"
+              :autosize="{ minRows: 2, maxRows: 4 }"
               maxlength="255"
               show-word-limit
             />
           </el-form-item>
+          <el-divider content-position="left">权限与访问范围</el-divider>
+          <api-key-scope-editor ref="scopeEditor" />
           <el-form-item>
             <div style="float: right;">
-              <el-button type="primary" @click="onSubmit">保存</el-button>
+              <el-button type="primary" :loading="isLoading" @click="onSubmit">
+                创建并显示密钥
+              </el-button>
               <el-button @click="close">取消</el-button>
             </div>
           </el-form-item>
@@ -64,9 +75,11 @@
 <script>
 
 import elDragDialog from '@/directive/el-drag-dialog'
+import ApiKeyScopeEditor from './apiKeyScopeEditor.vue'
 
 export default {
   name: 'AddUserApiKey',
+  components: { ApiKeyScopeEditor },
   directives: { elDragDialog },
   props: {},
   data() {
@@ -103,30 +116,39 @@ export default {
       this.userId = userId
       this.listChangeCallback = callback
       this.showDialog = true
+      this.$nextTick(() => {
+        this.$refs.scopeEditor.initialize({}, this.userId).catch(() => {})
+      })
     },
     onSubmit() {
       this.$refs.formRef.validate((valid) => {
         if (valid) {
+          const scopeError = this.$refs.scopeEditor.validate()
+          if (scopeError) {
+            this.$message.warning(scopeError)
+            return
+          }
+          const scope = this.$refs.scopeEditor.value()
+          this.isLoading = true
           this.$store.dispatch('userApiKeys/add', {
             userId: this.userId,
             app: this.form.app,
             enable: this.form.enable,
             expiresAt: this.form.expiresAt,
-            remark: this.form.remark
+            remark: this.form.remark,
+            ...scope
           })
             .then(data => {
-              this.$message({
-                showClose: true,
-                message: '添加成功',
-                type: 'success'
-              })
               this.showDialog = false
               if (this.listChangeCallback) {
-                this.listChangeCallback()
+                this.listChangeCallback(data)
               }
             })
             .catch((error) => {
               console.error(error)
+            })
+            .finally(() => {
+              this.isLoading = false
             })
         }
       })

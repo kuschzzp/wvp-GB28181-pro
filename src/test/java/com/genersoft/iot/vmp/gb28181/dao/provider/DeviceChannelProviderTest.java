@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.gb28181.dao.provider;
 
+import com.genersoft.iot.vmp.authorization.video.model.VideoScopeQuery;
 import org.junit.jupiter.api.Test;
 
 import java.util.*;
@@ -12,7 +13,7 @@ class DeviceChannelProviderTest {
 
     @Test
     void queryChannels_withChannelIds_shouldUseBindVariables() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         params.put("channelIds", Arrays.asList("CH001", "CH002", "CH003"));
         String sql = provider.queryChannels(params);
         assertTrue(sql.contains("#{channelIds[0]}"), "should use #{channelIds[0]}");
@@ -25,7 +26,7 @@ class DeviceChannelProviderTest {
 
     @Test
     void queryChannels_withoutChannelIds_shouldNotContainInClause() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         String sql = provider.queryChannels(params);
         assertFalse(sql.contains("device_id in ("), "should not have IN clause when no channelIds");
         assertTrue(sql.contains("ORDER BY"), "should have ORDER BY");
@@ -33,7 +34,7 @@ class DeviceChannelProviderTest {
 
     @Test
     void queryChannels_withEmptyChannelIds_shouldNotContainInClause() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         params.put("channelIds", Collections.emptyList());
         String sql = provider.queryChannels(params);
         assertFalse(sql.contains("device_id in ("), "should not have IN clause when channelIds empty");
@@ -41,7 +42,7 @@ class DeviceChannelProviderTest {
 
     @Test
     void queryChannels_withDataDeviceId_shouldUseBindVariable() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         params.put("dataDeviceId", 42);
         String sql = provider.queryChannels(params);
         assertTrue(sql.contains("#{dataDeviceId}"), "should use #{dataDeviceId}");
@@ -49,7 +50,7 @@ class DeviceChannelProviderTest {
 
     @Test
     void queryChannels_withQuery_shouldUseBindVariable() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         params.put("query", "test");
         String sql = provider.queryChannels(params);
         assertTrue(sql.contains("#{query}"), "should use #{query} bind variable");
@@ -58,7 +59,7 @@ class DeviceChannelProviderTest {
 
     @Test
     void queryChannels_withOnline_shouldFilterStatus() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         params.put("online", true);
         String sql = provider.queryChannels(params);
         assertTrue(sql.contains("'ON'"), "should filter for ON status");
@@ -67,7 +68,7 @@ class DeviceChannelProviderTest {
 
     @Test
     void queryChannels_withOffline_shouldFilterStatus() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         params.put("online", false);
         String sql = provider.queryChannels(params);
         assertTrue(sql.contains("'OFF'"), "should filter for OFF status");
@@ -76,7 +77,7 @@ class DeviceChannelProviderTest {
 
     @Test
     void queryChannels_withBusinessGroupId_shouldFilter() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         params.put("businessGroupId", "group-1");
         String sql = provider.queryChannels(params);
         assertTrue(sql.contains("#{businessGroupId}"), "should use bind variable");
@@ -169,9 +170,16 @@ class DeviceChannelProviderTest {
 
     @Test
     void queryChannels_withHasStream_shouldFilter() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = scopedParams();
         params.put("hasStream", true);
         String sql = provider.queryChannels(params);
         assertTrue(sql.contains("stream_id IS NOT NULL"), "should filter for not null stream_id");
+    }
+
+    private Map<String, Object> scopedParams() {
+        Map<String, Object> params = new HashMap<>();
+        params.put("scope", new VideoScopeQuery(
+                true, Set.of(), Set.of(), Set.of(), "video:channel:list", 1L));
+        return params;
     }
 }

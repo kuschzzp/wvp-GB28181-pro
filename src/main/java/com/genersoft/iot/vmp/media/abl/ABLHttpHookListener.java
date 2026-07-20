@@ -1,6 +1,7 @@
 package com.genersoft.iot.vmp.media.abl;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.genersoft.iot.vmp.auth.annotation.MediaHookEndpoint;
 import com.genersoft.iot.vmp.common.enums.MediaStreamUtil;
 import com.genersoft.iot.vmp.conf.UserSetting;
 import com.genersoft.iot.vmp.conf.exception.ControllerException;
@@ -16,6 +17,15 @@ import com.genersoft.iot.vmp.media.abl.event.HookAblServerStartEvent;
 import com.genersoft.iot.vmp.media.bean.MediaServer;
 import com.genersoft.iot.vmp.media.bean.ResultForOnPublish;
 import com.genersoft.iot.vmp.media.event.media.*;
+import com.genersoft.iot.vmp.media.security.AblSchemaDecision;
+import com.genersoft.iot.vmp.media.security.AblSchemaResolver;
+import com.genersoft.iot.vmp.media.security.MediaHookAuthenticationFilter;
+import com.genersoft.iot.vmp.media.security.MediaHookParameters;
+import com.genersoft.iot.vmp.media.security.MediaNodePrincipal;
+import com.genersoft.iot.vmp.media.security.MediaNodeType;
+import com.genersoft.iot.vmp.media.security.MediaPlayHookRequest;
+import com.genersoft.iot.vmp.media.security.PlayTicketDecision;
+import com.genersoft.iot.vmp.media.security.PlayTicketService;
 import com.genersoft.iot.vmp.media.service.IMediaServerService;
 import com.genersoft.iot.vmp.media.zlm.dto.hook.HookResult;
 import com.genersoft.iot.vmp.media.zlm.dto.hook.HookResultForOnPublish;
@@ -31,15 +41,13 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.util.ObjectUtils;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
-import java.util.Map;
-
 /**
  * ABL 的hook事件监听
  */
 @RestController
 @RequestMapping("/index/hook/abl")
 @Hidden
+@MediaHookEndpoint(reason = "ABL 媒体节点回调边界，使用独立逐节点 Hook 身份")
 public class ABLHttpHookListener {
 
     private final static Logger logger = LoggerFactory.getLogger(ABLHttpHookListener.class);
@@ -85,6 +93,12 @@ public class ABLHttpHookListener {
     @Autowired
     private ApplicationEventPublisher applicationEventPublisher;
 
+    @Autowired
+    private PlayTicketService playTicketService;
+
+    @Autowired
+    private AblSchemaResolver ablSchemaResolver;
+
     /**
      * 服务器定时上报时间，上报间隔可配置，默认10s上报一次
      */
@@ -109,23 +123,82 @@ public class ABLHttpHookListener {
      */
     @ResponseBody
     @PostMapping(value = "/on_play", produces = "application/json;charset=UTF-8")
-    public HookResult onPlay(@RequestBody OnPlayABLHookParam param) {
-
+    public HookResult onPlay(
+            HttpServletRequest request,
+            @RequestBody OnPlayABLHookParam param) {
+        if (!matchesAuthenticatedNode(
+                request, param.getMediaServerId(), MediaNodeType.ABL)) {
+            return denyPlay(param, "NODE_IDENTITY_MISMATCH");
+        }
         MediaServer mediaServer = mediaServerService.getOne(param.getMediaServerId());
         if (mediaServer == null) {
-            return new HookResultForOnPublish(0, "success");
+            return denyPlay(param, "NODE_NOT_AVAILABLE");
         }
 
-        Map<String, String> paramMap = urlParamToMap(param.getParams());
-        // 对于播放流进行鉴权
-        boolean authenticateResult = mediaService.authenticatePlay(param.getApp(), param.getStream(), paramMap.get("callId"));
-        if (!authenticateResult) {
-            logger.info("[ABL HOOK] 播放鉴权 失败：{}->{}", param.getMediaServerId(), param);
-            ablresTfulUtils.closeStreams(mediaServer, param.getApp(), param.getStream());
-
+        AblSchemaDecision schemaDecision = ablSchemaResolver.resolve(
+                param.getNetworkType());
+        if (!schemaDecision.mapped()) {
+            if (schemaDecision.legacyAuditCompatibility()
+                    && mediaService.authenticateLegacyPlayInAudit(
+                    param.getApp(),
+                    param.getStream(),
+                    MediaHookParameters.unique(param.getParams(), "callId"))) {
+                logger.warn("[ABL HOOK] 未映射 networkType 使用 audit 兼容播放：node={}, networkType={}, app={}, stream={}",
+                        param.getMediaServerId(), param.getNetworkType(),
+                        param.getApp(), param.getStream());
+                return HookResult.SUCCESS();
+            }
+            return denyPlay(param, "ABL_SCHEMA_UNRESOLVED");
         }
-        logger.info("[ABL HOOK] 播放鉴权成功：{}->{}", param.getMediaServerId(), param);
+
+        MediaPlayHookRequest verificationRequest = new MediaPlayHookRequest(
+                param.getMediaServerId(),
+                param.getApp(),
+                param.getStream(),
+                schemaDecision.schema().name(),
+                MediaHookParameters.unique(param.getParams(), "ticket"));
+        final PlayTicketDecision ticketDecision;
+        try {
+            ticketDecision = playTicketService.verify(verificationRequest);
+        } catch (RuntimeException exception) {
+            logger.warn("[ABL HOOK] 播放票据校验异常，已拒绝：node={}, networkType={}, app={}, stream={}",
+                    param.getMediaServerId(), param.getNetworkType(),
+                    param.getApp(), param.getStream());
+            return denyPlay(param, "TICKET_VERIFY_ERROR");
+        }
+        if (ticketDecision == null || !ticketDecision.allowed()) {
+            return denyPlay(
+                    param,
+                    ticketDecision == null
+                            ? "EMPTY_DECISION"
+                            : ticketDecision.reason());
+        }
+        logger.debug("[ABL HOOK] 播放票据校验成功：node={}, networkType={}, app={}, stream={}",
+                param.getMediaServerId(), param.getNetworkType(),
+                param.getApp(), param.getStream());
         return HookResult.SUCCESS();
+    }
+
+    private HookResult denyPlay(
+            OnPlayABLHookParam param,
+            String reason) {
+        logger.info("[ABL HOOK] 播放票据校验失败：node={}, networkType={}, app={}, stream={}, reason={}",
+                param.getMediaServerId(), param.getNetworkType(),
+                param.getApp(), param.getStream(), reason);
+        return new HookResult(401, "Unauthorized");
+    }
+
+    private boolean matchesAuthenticatedNode(
+            HttpServletRequest request,
+            String mediaServerId,
+            MediaNodeType nodeType) {
+        Object attribute = request == null
+                ? null
+                : request.getAttribute(
+                        MediaHookAuthenticationFilter.PRINCIPAL_ATTRIBUTE);
+        return attribute instanceof MediaNodePrincipal principal
+                && principal.nodeType() == nodeType
+                && principal.mediaServerId().equals(mediaServerId);
     }
 
     /**
@@ -362,21 +435,4 @@ public class ABLHttpHookListener {
         return HookResult.SUCCESS();
     }
 
-    private Map<String, String> urlParamToMap(String params) {
-        HashMap<String, String> map = new HashMap<>();
-        if (ObjectUtils.isEmpty(params)) {
-            return map;
-        }
-        String[] paramsArray = params.split("&");
-        if (paramsArray.length == 0) {
-            return map;
-        }
-        for (String param : paramsArray) {
-            String[] paramArray = param.split("=");
-            if (paramArray.length == 2) {
-                map.put(paramArray[0], paramArray[1]);
-            }
-        }
-        return map;
-    }
 }

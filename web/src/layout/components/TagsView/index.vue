@@ -43,6 +43,9 @@ export default {
   computed: {
     visitedViews() {
       return this.$store.state.tagsView.visitedViews
+    },
+    routes() {
+      return this.$store.getters.permission_routes
     }
   },
   watch: {
@@ -275,7 +278,8 @@ export default {
       vertical-align: 2px;
       border-radius: 50%;
       text-align: center;
-      transition: all .3s cubic-bezier(.645, .045, .355, 1);
+      transition: background-color .3s cubic-bezier(.645, .045, .355, 1),
+        color .3s cubic-bezier(.645, .045, .355, 1);
       transform-origin: 100% 50%;
       &:before {
         transform: scale(.6);
