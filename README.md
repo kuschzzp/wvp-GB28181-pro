@@ -63,9 +63,53 @@ ZLMediaKit/ABL Hook 已启用独立媒体节点认证链：每节点使用独立
 
 ### Docker 全新部署
 
-`docker/` 目录已经内置完整的 2.8 MySQL 初始化链，Compose 只挂载英文路径。使用空 MySQL 数据目录启动时，会依次创建业务基础结构、权限结构和最终用户角色关系表，不需要额外执行 `数据库/` 下的升级脚本。部署前必须在 `docker/.env` 设置两个不同的 `API_KEY_PEPPER` 和 `MEDIA_HOOK_SECRET_PEPPER`。
+`docker/` 目录已经内置完整的 2.8 MySQL 初始化链，Compose 只挂载英文路径。使用空 MySQL 数据目录启动时，会依次创建业务基础结构、权限结构和最终用户角色关系表，不需要额外执行 `数据库/` 下的升级脚本。
 
-完整步骤见 [Docker 全新部署说明](docker/README.md)。该入口只用于空库新装，不处理已有数据目录升级。
+#### 启动前准备
+
+1. 安装 Docker，并确认当前环境支持 `docker compose`。
+2. 确认 `docker/volumes/mysql/data` 不包含旧 MySQL 数据；MySQL 只会在空数据目录首次启动时执行初始化 SQL。
+3. 根据现场网络修改 `docker/.env` 中的流媒体、SIP 地址和端口，尤其是：
+
+```dotenv
+Stream_IP=127.0.0.1
+SDP_IP=127.0.0.1
+SIP_ShowIP=127.0.0.1
+SIP_Port=8160
+```
+
+如果要接入真实摄像头或国标设备，请把上面的 IP 改成设备可访问到的宿主机 IP，不要继续使用 `127.0.0.1`。
+
+#### 首次启动
+
+在项目根目录执行：
+
+```bash
+cd docker
+./prepare-env.sh
+docker compose up -d --build
+```
+
+`./prepare-env.sh` 会自动补齐 `API_KEY_PEPPER` 和 `MEDIA_HOOK_SECRET_PEPPER` 两个密钥空值，并写回 `docker/.env`；如果用户已经手工填写，则不会覆盖。这两个值需要长期保存，不要提交到仓库，后续随意更换会导致已签发的 API Key 或媒体 Hook 凭证失效。
+
+#### 查看状态和日志
+
+```bash
+cd docker
+docker compose ps
+docker compose logs -f polaris-mysql polaris-wvp
+```
+
+#### 重新构建启动
+
+代码或前端资源有变化，需要重新构建镜像时执行：
+
+```bash
+cd docker
+docker compose up -d --build --force-recreate
+```
+
+默认 Web 入口是 `http://宿主机IP:8080`，默认登录账号和密码均为 `admin`。该入口只用于空库新装，不处理已有数据目录升级；更多说明见 [Docker 全新部署说明](docker/README.md)。
 
 ### 非 Docker 升级与回滚
 

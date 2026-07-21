@@ -6,20 +6,21 @@
 
 1. 确认 `volumes/mysql/data` 不包含旧 MySQL 数据；MySQL 只会在空数据目录首次启动时执行初始化 SQL。
 2. 根据现场网络修改 `.env` 中的流媒体、SIP 地址和端口。
-3. 在 `.env` 中填写两个不同的、至少 32 字节的随机值：
+3. 在 `.env` 中填写两个不同的、至少 32 字节的随机值，或在首次启动前执行 `./prepare-env.sh` 自动补齐空值：
 
 ```dotenv
 API_KEY_PEPPER=<至少32字节随机值>
 MEDIA_HOOK_SECRET_PEPPER=<另一个至少32字节随机值>
 ```
 
-这两个值必须长期保存，不要提交到仓库。更换它们会使已经签发的 API Key 或媒体 Hook 凭证失效。
+`prepare-env.sh` 只会生成缺失或空值的密钥，不会覆盖已经填写的值；生成随机值时优先使用 `openssl`，不可用时使用 `python3`。这两个值必须长期保存，不要提交到仓库。更换它们会使已经签发的 API Key 或媒体 Hook 凭证失效。
 
 ## 首次启动
 
 在本目录执行：
 
 ```bash
+./prepare-env.sh
 docker compose up -d --build
 ```
 
