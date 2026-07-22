@@ -18,6 +18,7 @@ import com.genersoft.iot.vmp.media.security.dto.StreamShareResponse;
 import com.genersoft.iot.vmp.storager.dao.StreamShareMapper;
 import com.genersoft.iot.vmp.storager.dao.dto.StreamShare;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -48,6 +49,7 @@ public class ShareServiceImpl implements ShareService {
     private final Clock clock;
     private final SecureRandom secureRandom;
 
+    @Autowired
     public ShareServiceImpl(
             AuthorizationFacade authorizationFacade,
             CurrentPrincipalService currentPrincipalService,

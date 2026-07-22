@@ -81,9 +81,9 @@ key (id)
 values
     (100, 0, '系统管理', 'M', 'System', '/system', 'Layout', null, 'system', 30, 0, 0, 0, 0, 1, current_timestamp, current_timestamp),
     (110, 100, '用户管理', 'C', 'SystemUser', 'user', 'system/user/index', null, 'user', 1, 0, 0, 0, 0, 1, current_timestamp, current_timestamp),
-    (120, 100, '角色管理', 'C', 'SystemRole', 'role', 'system/role/index', null, 'peoples', 2, 0, 0, 0, 0, 1, current_timestamp, current_timestamp),
+    (120, 100, '角色管理', 'C', 'SystemRole', 'role', 'system/role/index', null, 'group', 2, 0, 0, 0, 0, 1, current_timestamp, current_timestamp),
     (130, 100, '部门管理', 'C', 'SystemDept', 'dept', 'system/dept/index', null, 'tree', 3, 0, 0, 0, 0, 1, current_timestamp, current_timestamp),
-    (140, 100, '菜单管理', 'C', 'SystemMenu', 'menu', 'system/menu/index', null, 'tree-table', 4, 0, 0, 0, 0, 1, current_timestamp, current_timestamp),
+    (140, 100, '菜单管理', 'C', 'SystemMenu', 'menu', 'system/menu/index', null, 'table', 4, 0, 0, 0, 0, 1, current_timestamp, current_timestamp),
     (150, 100, 'API Key', 'C', 'SystemApiKey', 'api-key', 'system/api-key/index', null, 'key', 5, 0, 1, 0, 0, 1, current_timestamp, current_timestamp),
     (160, 100, '视频资源组', 'C', 'SystemResourceGroup', 'resource-group', 'system/resource-group/index', null, 'nested', 6, 0, 0, 0, 0, 1, current_timestamp, current_timestamp),
     (200, 0, '运维管理', 'M', 'Operations', '/operations', 'Layout', null, 'monitor', 20, 0, 0, 0, 0, 1, current_timestamp, current_timestamp),

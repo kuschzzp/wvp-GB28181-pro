@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.media.security;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -26,6 +27,7 @@ public class RedisMediaHookReplayGuard implements MediaHookReplayGuard {
     private final MediaAccessProperties properties;
     private final Clock clock;
 
+    @Autowired
     public RedisMediaHookReplayGuard(
             StringRedisTemplate redisTemplate,
             MediaAccessProperties properties) {

@@ -3,6 +3,7 @@ package com.genersoft.iot.vmp.media.security;
 import com.genersoft.iot.vmp.auth.apikey.ApiKeyIpAllowlist;
 import com.genersoft.iot.vmp.media.bean.MediaServer;
 import com.genersoft.iot.vmp.storager.dao.MediaServerMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.stereotype.Service;
@@ -20,6 +21,7 @@ public class MediaHookAuthenticationService {
     private final MediaHookSecretHasher secretHasher;
     private final Clock clock;
 
+    @Autowired
     public MediaHookAuthenticationService(
             MediaServerMapper mediaServerMapper,
             MediaHookSecretHasher secretHasher) {

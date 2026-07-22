@@ -2,6 +2,7 @@ package com.genersoft.iot.vmp.auth.config;
 
 import com.genersoft.iot.vmp.auth.model.AuthorizationMode;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
 import java.time.Duration;
 
@@ -40,6 +41,7 @@ public record AuthorizationProperties(
                 legacyApiKeyEnabled, legacyApiKeySunset, true);
     }
 
+    @ConstructorBinding
     public AuthorizationProperties {
         mode = mode == null ? AuthorizationMode.AUDIT : mode;
         principalCacheTtl = principalCacheTtl == null ? Duration.ofMinutes(5) : principalCacheTtl;

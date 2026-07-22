@@ -2,6 +2,7 @@ package com.genersoft.iot.vmp.media.security;
 
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
@@ -28,6 +29,7 @@ public class MediaHookSecretHasher {
     private byte[] pepper;
     private boolean ephemeralPepper;
 
+    @Autowired
     public MediaHookSecretHasher(
             MediaAccessProperties properties,
             Environment environment) {

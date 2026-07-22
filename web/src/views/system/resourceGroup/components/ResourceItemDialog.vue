@@ -93,7 +93,7 @@
       </el-table-column>
       <template slot="empty">
         <div class="empty-state">
-          {{ activeType === 'JT_CHANNEL' && !jtDeviceId ? '请先选择 JT1078 终端' : '没有匹配的视频资源' }}
+          {{ emptyText() }}
         </div>
       </template>
     </el-table>
@@ -161,6 +161,7 @@ export default {
       page: 1,
       count: 15,
       total: 0,
+      optionalResourceUnavailable: false,
       existingKeys: new Set(),
       selectedItems: new Map()
     }
@@ -201,13 +202,26 @@ export default {
     loadTerminals() {
       if (this.terminals.length > 0) return Promise.resolve(this.terminals)
       this.terminalLoading = true
-      return queryJtDevices({ page: 1, count: 100, query: '', online: null })
+      return queryJtDevices({
+        page: 1,
+        count: 100,
+        query: '',
+        online: null,
+        suppressGlobalError: true
+      })
         .then(response => {
+          this.optionalResourceUnavailable = false
           const page = unwrapResponseData(response, {}) || {}
           this.terminals = Array.isArray(page.list) ? page.list : []
           if (!this.jtDeviceId && this.terminals.length > 0) {
             this.jtDeviceId = this.terminals[0].id
           }
+          return this.terminals
+        })
+        .catch(error => {
+          if (!this.markOptionalResourceUnavailable(error)) throw error
+          this.terminals = []
+          this.jtDeviceId = null
           return this.terminals
         })
         .finally(() => {
@@ -223,11 +237,15 @@ export default {
       this.loading = true
       return this.requestResources()
         .then(response => {
+          this.optionalResourceUnavailable = false
           const page = unwrapResponseData(response, {}) || {}
           const list = Array.isArray(page.list) ? page.list : []
           this.rows = list.map(row => this.mapRow(row)).filter(Boolean)
           this.total = Number(page.total || this.rows.length)
           this.restorePageSelection()
+        })
+        .catch(error => {
+          if (!this.markOptionalResourceUnavailable(error)) throw error
         })
         .finally(() => {
           this.loading = false
@@ -249,18 +267,48 @@ export default {
         })
       }
       if (this.activeType === 'JT_TERMINAL') {
-        return queryJtDevices({ ...common, online: null })
+        return queryJtDevices({ ...common, online: null, suppressGlobalError: true })
       }
       if (this.activeType === 'JT_CHANNEL') {
-        return queryJtChannels({ ...common, deviceId: this.jtDeviceId })
+        return queryJtChannels({
+          ...common,
+          deviceId: this.jtDeviceId,
+          suppressGlobalError: true
+        })
       }
       if (this.activeType === 'STREAM_PROXY') {
         return queryStreamProxies({ ...common, pulling: null, mediaServerId: null })
       }
       return queryStreamPushes({ ...common, pushing: null, mediaServerId: null })
     },
+    isOptionalResourceEndpointUnavailable(error) {
+      if (this.activeType !== 'JT_TERMINAL' && this.activeType !== 'JT_CHANNEL') {
+        return false
+      }
+      const responseStatus = error && error.response && error.response.status
+      return Number(error && error.status) === 404 ||
+        Number(error && error.code) === 404 ||
+        Number(responseStatus) === 404
+    },
+    markOptionalResourceUnavailable(error) {
+      if (!this.isOptionalResourceEndpointUnavailable(error)) return false
+      this.rows = []
+      this.total = 0
+      this.optionalResourceUnavailable = true
+      return true
+    },
+    emptyText() {
+      if (this.optionalResourceUnavailable &&
+        (this.activeType === 'JT_TERMINAL' || this.activeType === 'JT_CHANNEL')) {
+        return 'JT1078 服务未启用或暂无资源'
+      }
+      if (this.activeType === 'JT_CHANNEL' && !this.jtDeviceId) {
+        return '请先选择 JT1078 终端'
+      }
+      return '没有匹配的视频资源'
+    },
     mapRow(row) {
-      const resourceId = Number(row && row.id)
+      const resourceId = this.resourceIdForRow(row)
       if (!row || resourceId <= 0) return null
       const mapped = {
         resourceType: this.activeType,
@@ -286,6 +334,13 @@ export default {
       }
       mapped.key = resourceItemKey(mapped)
       return mapped
+    },
+    resourceIdForRow(row) {
+      if (!row) return 0
+      if (this.activeType === 'JT_CHANNEL') {
+        return Number(row.dataDeviceId || row.id)
+      }
+      return Number(row.id)
     },
     terminalLabel(terminal) {
       const name = terminal.plateNo || terminal.phoneNumber || `终端 #${terminal.id}`

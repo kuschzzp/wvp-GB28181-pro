@@ -1,1 +1,8 @@
 docker/volumes
+docker/logs
+logs
+target
+**/target
+**/node_modules
+.idea
+.DS_Store

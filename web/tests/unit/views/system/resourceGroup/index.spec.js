@@ -1,5 +1,10 @@
 jest.mock('@/utils/request', () => jest.fn())
 
+import request from '@/utils/request'
+import {
+  queryChannels as queryJtChannels,
+  queryDevices as queryJtDevices
+} from '@/api/jtDevice'
 import {
   collectInheritedResourceGroupIds,
   mergeResourceItems,
@@ -13,6 +18,10 @@ import ResourceItemDialog from '@/views/system/resourceGroup/components/Resource
 import RoleForm from '@/views/system/role/components/RoleForm.vue'
 
 describe('video resource group management', () => {
+  beforeEach(() => {
+    request.mockClear()
+  })
+
   const groups = [
     {
       id: 1,
@@ -94,10 +103,72 @@ describe('video resource group management', () => {
     expect(ResourceItemDialog.methods.typeHint.call({ activeType: 'CHANNEL' }))
       .toContain('仅授权当前通道')
 
+    const mapContext = {
+      activeType: 'JT_CHANNEL',
+      resourceIdForRow: ResourceItemDialog.methods.resourceIdForRow
+    }
+    expect(ResourceItemDialog.methods.mapRow.call(mapContext, {
+      id: 9001,
+      dataDeviceId: 41,
+      channelId: 2,
+      name: 'JT A2'
+    })).toMatchObject({
+      resourceType: 'JT_CHANNEL',
+      resourceId: 41,
+      secondary: 2
+    })
+
+    expect(ResourceItemDialog.methods.mapRow.call({
+      activeType: 'JT_TERMINAL',
+      resourceIdForRow: ResourceItemDialog.methods.resourceIdForRow
+    }, {
+      id: 31,
+      phoneNumber: '13800138000'
+    })).toMatchObject({
+      resourceType: 'JT_TERMINAL',
+      resourceId: 31
+    })
+
     const merged = ResourceGroupPage.methods.mergeItems.call({},
       [{ resourceType: 'CHANNEL', resourceId: 8 }],
       [{ type: 'CHANNEL', id: 8 }, { type: 'CHANNEL', id: 9 }])
     expect(merged.map(item => item.resourceId)).toEqual([8, 9])
+  })
+
+  it('资源弹窗将未启用的 JT1078 接口当作空资源处理', () => {
+    const context = {
+      activeType: 'JT_TERMINAL',
+      rows: [{ key: 'old' }],
+      total: 1,
+      optionalResourceUnavailable: false,
+      isOptionalResourceEndpointUnavailable: ResourceItemDialog.methods.isOptionalResourceEndpointUnavailable
+    }
+
+    expect(ResourceItemDialog.methods.markOptionalResourceUnavailable.call(context, { status: 404 }))
+      .toBe(true)
+    expect(context.rows).toEqual([])
+    expect(context.total).toBe(0)
+    expect(context.optionalResourceUnavailable).toBe(true)
+    expect(ResourceItemDialog.methods.emptyText.call(context)).toContain('JT1078')
+
+    context.activeType = 'GB_DEVICE'
+    expect(ResourceItemDialog.methods.isOptionalResourceEndpointUnavailable.call(context, { status: 404 }))
+      .toBe(false)
+  })
+
+  it('资源弹窗可关闭 JT1078 列表接口的全局错误弹窗', () => {
+    queryJtDevices({ page: 1, count: 5, suppressGlobalError: true })
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({
+      url: '/api/jt1078/terminal/list',
+      suppressGlobalError: true
+    }))
+
+    request.mockClear()
+    queryJtChannels({ page: 1, count: 5, deviceId: 7, suppressGlobalError: true })
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({
+      url: '/api/jt1078/terminal/channel/list',
+      suppressGlobalError: true
+    }))
   })
 
   it('角色 CUSTOM 范围提交显式资源组，ALL/NONE 不携带残留 ID', () => {
@@ -116,6 +187,7 @@ describe('video resource group management', () => {
         resourceGroupIds: [2, 2, 3]
       },
       isEdit: true,
+      getMenuTreeSubmitKeys: RoleForm.methods.getMenuTreeSubmitKeys,
       $refs: {
         menuTree: { getCheckedKeys: () => [1] },
         resourceGroupTree: { getCheckedKeys: () => [2, 2, 3] }
@@ -154,6 +226,7 @@ describe('video resource group management', () => {
       canAssignVideoResources: false,
       originalVideoScopeType: 'CUSTOM',
       originalResourceGroupIds: [2, 3],
+      getMenuTreeSubmitKeys: RoleForm.methods.getMenuTreeSubmitKeys,
       $refs: {
         menuTree: { getCheckedKeys: () => [] }
       }

@@ -21,6 +21,7 @@ import com.genersoft.iot.vmp.media.security.TicketedMediaUrlFactory;
 import com.genersoft.iot.vmp.media.security.dto.PlayTicketRequest;
 import com.genersoft.iot.vmp.media.security.dto.PlayTicketResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.stereotype.Service;
@@ -55,6 +56,7 @@ public class PlayTicketServiceImpl implements PlayTicketService {
     private final SecureRandom secureRandom;
     private final Duration ttl;
 
+    @Autowired
     public PlayTicketServiceImpl(
             AuthorizationFacade authorizationFacade,
             CurrentPrincipalService currentPrincipalService,

@@ -4,6 +4,7 @@ import com.genersoft.iot.vmp.auth.config.AuthorizationProperties;
 import com.genersoft.iot.vmp.auth.model.AuthorizationMode;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
@@ -29,6 +30,7 @@ public class ApiKeySecretHasher {
     private final boolean enforceMode;
     private byte[] pepper;
 
+    @Autowired
     public ApiKeySecretHasher(AuthorizationProperties properties, Environment environment) {
         this.environment = environment;
         this.enforceMode = properties.mode() == AuthorizationMode.ENFORCE;

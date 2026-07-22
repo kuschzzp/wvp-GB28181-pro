@@ -5,6 +5,7 @@ import com.genersoft.iot.vmp.auth.model.AuthPrincipal;
 import com.genersoft.iot.vmp.auth.model.PrincipalType;
 import com.genersoft.iot.vmp.auth.service.CurrentPrincipalService;
 import com.genersoft.iot.vmp.auth.service.TokenVersionService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -36,6 +37,7 @@ public class LogWebSocketTicketServiceImpl
     private final SecureRandom secureRandom;
     private final Duration ttl;
 
+    @Autowired
     public LogWebSocketTicketServiceImpl(
             CurrentPrincipalService currentPrincipalService,
             TokenVersionService tokenVersionService,

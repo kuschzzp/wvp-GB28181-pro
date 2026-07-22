@@ -7,6 +7,7 @@ import com.genersoft.iot.vmp.conf.UserSetting;
 import com.genersoft.iot.vmp.auth.apikey.ApiKeyAuthenticationFilter;
 import com.genersoft.iot.vmp.authorization.video.resolver.AmbiguousVideoResourceException;
 import com.genersoft.iot.vmp.authorization.video.resolver.VideoResourceNotFoundException;
+import com.genersoft.iot.vmp.conf.exception.BusinessException;
 import com.genersoft.iot.vmp.conf.security.AnonymousAuthenticationEntryPoint;
 import com.genersoft.iot.vmp.conf.security.DefaultUserDetailsServiceImpl;
 import com.genersoft.iot.vmp.conf.security.JwtAuthenticationFilter;
@@ -15,6 +16,7 @@ import com.genersoft.iot.vmp.conf.security.WebSecurityConfig;
 import com.genersoft.iot.vmp.media.security.MediaHookAuthenticationFilter;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.MethodParameter;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.http.server.ServerHttpRequest;
@@ -142,6 +144,49 @@ class SecurityStatusCodeTest {
         assertEquals(400, response.getStatusCode().value());
         assertNotNull(response.getBody());
         assertEquals(400, response.getBody().getCode());
+    }
+
+    @Test
+    void businessExceptionKeepsUserFacingMessageAndHttpStatus() {
+        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+        var response = handler.handleBusinessException(
+                new BusinessException("部门存在子部门，不能删除", HttpStatus.CONFLICT));
+
+        assertEquals(409, response.getStatusCode().value());
+        assertNotNull(response.getBody());
+        assertEquals(100, response.getBody().getCode());
+        assertEquals("部门存在子部门，不能删除", response.getBody().getMsg());
+    }
+
+    @Test
+    void illegalArgumentKeepsSafeChineseMessageButHidesInternalEnglishMessage() {
+        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+        var userFacing = handler.handleIllegalArgument(
+                new IllegalArgumentException("部门编码已存在"));
+        var internal = handler.handleIllegalArgument(
+                new IllegalArgumentException("request must not be null"));
+
+        assertNotNull(userFacing.getBody());
+        assertEquals(400, userFacing.getStatusCode().value());
+        assertEquals("部门编码已存在", userFacing.getBody().getMsg());
+        assertNotNull(internal.getBody());
+        assertEquals(400, internal.getStatusCode().value());
+        assertEquals("参数或方法错误", internal.getBody().getMsg());
+    }
+
+    @Test
+    void unexpectedExceptionStillUsesGenericSystemMessage() {
+        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+        var response = handler.handleUnexpectedException(
+                new IllegalStateException("部门闭包关系不完整"));
+
+        assertEquals(500, response.getStatusCode().value());
+        assertNotNull(response.getBody());
+        assertEquals(500, response.getBody().getCode());
+        assertEquals("系统异常", response.getBody().getMsg());
     }
 
     @Test

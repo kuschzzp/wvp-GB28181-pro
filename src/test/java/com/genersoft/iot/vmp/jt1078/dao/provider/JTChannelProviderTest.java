@@ -62,5 +62,11 @@ class JTChannelProviderTest {
     void baseSql_shouldHaveJoins() {
         assertTrue(JTChannelProvider.BASE_SQL.contains("LEFT join wvp_device_channel"), "should have LEFT JOIN");
         assertTrue(JTChannelProvider.BASE_SQL.contains("wvp_jt_channel"), "should query from jt_channel");
+        assertFalse(JTChannelProvider.BASE_SQL.contains("jc.*"), "should avoid ambiguous jt wildcard columns");
+        assertFalse(JTChannelProvider.BASE_SQL.contains("wdc.*"), "should avoid common channel id overriding jt channel id");
+        assertTrue(JTChannelProvider.BASE_SQL.contains("jc.id as id"), "should expose jt channel id as row id");
+        assertTrue(JTChannelProvider.BASE_SQL.contains("coalesce(wdc.data_device_id, jc.id) as data_device_id"),
+                "should expose jt channel id as dataDeviceId");
+        assertTrue(JTChannelProvider.BASE_SQL.contains("wdc.id as gb_id"), "should keep common channel id under gbId");
     }
 }

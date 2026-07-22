@@ -220,6 +220,27 @@ update wvp_cloud_record
 create index if not exists idx_wvp_cloud_record_channel
     on wvp_cloud_record (channel_id, start_time);
 
+create table if not exists wvp_alarm (
+    id serial primary key,
+    channel_id integer,
+    description character varying(255),
+    snap_path character varying(255),
+    record_path character varying(255),
+    longitude double precision,
+    latitude double precision,
+    alarm_type integer,
+    alarm_time bigint
+);
+comment on column wvp_alarm.id is '主键ID';
+comment on column wvp_alarm.channel_id is '关联通道的数据库id';
+comment on column wvp_alarm.description is '报警描述';
+comment on column wvp_alarm.snap_path is '报警快照路径';
+comment on column wvp_alarm.record_path is '报警录像路径';
+comment on column wvp_alarm.longitude is '报警附带的经度';
+comment on column wvp_alarm.latitude is '报警附带的纬度';
+comment on column wvp_alarm.alarm_type is '报警类别';
+comment on column wvp_alarm.alarm_time is '报警时间';
+
 
 create table if not exists wvp_role_dept
 (
@@ -377,9 +398,9 @@ insert into wvp_menu
 values
     (100, 0, '系统管理', 'M', 'System', '/system', 'Layout', 'system', 10, 0, 0, 0, 0, 1),
     (110, 100, '用户管理', 'C', 'SystemUser', 'user', 'system/user/index', 'user', 1, 0, 0, 0, 0, 1),
-    (120, 100, '角色管理', 'C', 'SystemRole', 'role', 'system/role/index', 'peoples', 2, 0, 0, 0, 0, 1),
+    (120, 100, '角色管理', 'C', 'SystemRole', 'role', 'system/role/index', 'group', 2, 0, 0, 0, 0, 1),
     (130, 100, '部门管理', 'C', 'SystemDept', 'dept', 'system/dept/index', 'tree', 3, 0, 0, 0, 0, 1),
-    (140, 100, '菜单管理', 'C', 'SystemMenu', 'menu', 'system/menu/index', 'tree-table', 4, 0, 0, 0, 0, 1),
+    (140, 100, '菜单管理', 'C', 'SystemMenu', 'menu', 'system/menu/index', 'table', 4, 0, 0, 0, 0, 1),
     (150, 100, 'API Key', 'C', 'SystemApiKey', 'api-key', 'system/api-key/index', 'key', 5, 0, 1, 0, 0, 1),
     (160, 100, '视频资源组', 'C', 'SystemResourceGroup', 'resource-group', 'system/resource-group/index', 'nested', 6, 0, 0, 0, 0, 1),
     (200, 0, '运维管理', 'M', 'Operations', '/operations', 'Layout', 'monitor', 20, 0, 0, 0, 0, 1),
@@ -431,7 +452,7 @@ set route_name = case id
         when 100 then 30 when 200 then 20 when 300 then 10 when 310 then 5 when 320 then 3
         when 350 then 13 when 360 then 11 when 370 then 4 when 380 then 8 when 390 then 7
         when 400 then 6 when 410 then 15 when 420 then 14 else order_num end,
-    status = case when id in (120, 130, 140, 150, 160, 330, 340, 430, 440) then 1 else status end
+    status = case when id in (150, 330, 340, 430, 440) then 1 else status end
 where system_menu = 1
   and id in (100, 110, 120, 130, 140, 150, 160, 200, 210, 220, 300, 310, 320,
              330, 340, 350, 360, 370, 380, 390, 400, 410, 420, 430, 440);

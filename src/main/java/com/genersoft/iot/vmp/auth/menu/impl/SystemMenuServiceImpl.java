@@ -6,9 +6,11 @@ import com.genersoft.iot.vmp.auth.menu.dto.MenuRequest;
 import com.genersoft.iot.vmp.auth.model.AuthPrincipal;
 import com.genersoft.iot.vmp.auth.service.CurrentPrincipalService;
 import com.genersoft.iot.vmp.auth.service.TokenVersionService;
+import com.genersoft.iot.vmp.conf.exception.BusinessException;
 import com.genersoft.iot.vmp.conf.exception.ControllerException;
 import com.genersoft.iot.vmp.storager.dao.MenuMapper;
 import com.genersoft.iot.vmp.storager.dao.dto.Menu;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -120,7 +122,7 @@ public class SystemMenuServiceImpl implements SystemMenuService {
             throw new AccessDeniedException("系统菜单不能删除");
         }
         if (menuMapper.countChildren(id) > 0) {
-            throw new IllegalStateException("菜单存在子菜单，不能删除");
+            throw new BusinessException("菜单存在子菜单，不能删除", HttpStatus.CONFLICT);
         }
         List<Long> affectedUserIds = menuMapper.findUserIdsByMenuId(id);
         menuMapper.deleteRoleMenusByMenuId(id);

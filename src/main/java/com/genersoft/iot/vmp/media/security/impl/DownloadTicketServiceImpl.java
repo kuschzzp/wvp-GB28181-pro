@@ -20,6 +20,7 @@ import com.genersoft.iot.vmp.media.security.DownloadTicketService;
 import com.genersoft.iot.vmp.media.security.DownloadTicketStore;
 import com.genersoft.iot.vmp.media.security.dto.DownloadTicketRequest;
 import com.genersoft.iot.vmp.media.security.dto.DownloadTicketResponse;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.stereotype.Service;
@@ -51,6 +52,7 @@ public class DownloadTicketServiceImpl implements DownloadTicketService {
     private final SecureRandom secureRandom;
     private final Duration ttl;
 
+    @Autowired
     public DownloadTicketServiceImpl(
             DownloadResourceResolver resourceResolver,
             AuthorizationFacade authorizationFacade,

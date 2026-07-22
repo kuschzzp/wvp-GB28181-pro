@@ -238,7 +238,7 @@ public class CatalogDataManager{
 
     //每5秒执行一次, 发现数据5秒未更新则移除数据并认为数据接收超时
     @Scheduled(fixedDelay = 5, timeUnit = TimeUnit.SECONDS)
-    private void timerTask(){
+    void timerTask(){
         if (dataMap.isEmpty()) {
             return;
         }

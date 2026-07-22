@@ -1,3 +1,5 @@
+import fs from 'fs'
+import path from 'path'
 import UserForm from '@/views/system/user/components/UserForm.vue'
 import RoleForm from '@/views/system/role/components/RoleForm.vue'
 import RolePage from '@/views/system/role/index.vue'
@@ -71,6 +73,7 @@ describe('system management forms', () => {
         deptIds: []
       },
       isEdit: true,
+      getMenuTreeSubmitKeys: RoleForm.methods.getMenuTreeSubmitKeys,
       $refs: {
         menuTree: { getCheckedKeys: () => [1, 2, 2] },
         departmentTree: { getCheckedKeys: () => [3, 4, 4] }
@@ -85,6 +88,55 @@ describe('system management forms', () => {
     expect(payload).not.toHaveProperty('systemRole')
     context.form.deptDataScope = 'SELF'
     expect(RoleForm.methods.buildPayload.call(context).deptIds).toEqual([])
+  })
+
+  it('角色菜单树使用父子联动并保存半选父节点', () => {
+    const source = fs.readFileSync(
+      path.join(process.cwd(), 'src/views/system/role/components/RoleForm.vue'),
+      'utf8'
+    )
+    const menuTreeBlock = source.match(/ref="menuTree"[\s\S]*?<\/el-tree>/)[0]
+    const departmentTreeBlock = source.match(/ref="departmentTree"[\s\S]*?<\/el-tree>/)[0]
+
+    expect(menuTreeBlock).not.toContain('check-strictly')
+    expect(departmentTreeBlock).toContain('check-strictly')
+
+    const menuOptions = [
+      {
+        id: 300,
+        menuName: '视频管理',
+        children: [
+          { id: 450, menuName: '控制台', children: [] },
+          { id: 460, menuName: '分屏监控', children: [] }
+        ]
+      }
+    ]
+    expect(RoleForm.methods.getMenuTreeEchoKeys.call({ menuOptions }, [300, 450]))
+      .toEqual([450])
+
+    const context = {
+      form: {
+        id: 7,
+        name: '控制台角色',
+        roleKey: 'dashboard_user',
+        roleSort: 10,
+        deptDataScope: 'SELF',
+        videoScopeType: 'NONE',
+        menuIds: [],
+        deptIds: [],
+        resourceGroupIds: []
+      },
+      isEdit: true,
+      getMenuTreeSubmitKeys: RoleForm.methods.getMenuTreeSubmitKeys,
+      $refs: {
+        menuTree: {
+          getCheckedKeys: () => [450, 450],
+          getHalfCheckedKeys: () => [300]
+        }
+      }
+    }
+
+    expect(RoleForm.methods.buildPayload.call(context).menuIds).toEqual([450, 300])
   })
 
   it('部门页面识别 ROOT 与只读路径节点', () => {

@@ -47,9 +47,12 @@ export default {
       this.$store.dispatch('app/toggleSideBar')
     },
     async logout() {
-      await this.$store.dispatch('user/logout')
-      console.log('logout')
-      this.$router.push(`/login?redirect=${this.$route.fullPath}`)
+      try {
+        await this.$store.dispatch('user/logout')
+      } catch (error) {
+        await this.$store.dispatch('user/resetToken')
+      }
+      this.$router.push('/login')
     },
     changePassword() {
       this.$refs.changePasswordDialog.openDialog(this.logout)
@@ -87,10 +90,6 @@ export default {
     float: right;
     height: 100%;
     line-height: 50px;
-
-    &:focus {
-      outline: none;
-    }
 
     .right-menu-item {
       display: inline-block;

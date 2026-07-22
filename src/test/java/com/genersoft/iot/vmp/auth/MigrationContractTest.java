@@ -155,6 +155,23 @@ class MigrationContractTest {
     }
 
     @Test
+    void systemManagementMenuIconsHaveFrontendSvgAssets() throws IOException {
+        List<String> icons = jdbcTemplate.queryForList("""
+                select distinct icon
+                  from wvp_menu
+                 where id in (110, 120, 130, 140, 160)
+                   and icon is not null
+                   and icon <> ''
+                   and icon not like 'el-icon%'
+                """, String.class);
+
+        for (String icon : icons) {
+            assertTrue(Files.exists(Path.of("web/src/icons/svg", icon + ".svg")),
+                    "缺少前端菜单图标资源: web/src/icons/svg/" + icon + ".svg");
+        }
+    }
+
+    @Test
     void seedDataCanBeAppliedTwiceWithoutDuplicatingRelations() {
         new ResourceDatabasePopulator(new FileSystemResource("数据库/2.8.0-h2/h2-data.sql"))
                 .execute(dataSource);
@@ -242,8 +259,41 @@ class MigrationContractTest {
                 select upper(data_type)
                   from information_schema.columns
                  where lower(table_name) = 'wvp_user_api_key'
-                   and lower(column_name) = 'expired_at'
+                  and lower(column_name) = 'expired_at'
                 """, String.class));
+    }
+
+    @Test
+    void alarmRouteHasBackingAlarmTable() throws IOException {
+        Set<String> columns = new HashSet<>(jdbcTemplate.queryForList("""
+                select lower(column_name)
+                  from information_schema.columns
+                 where lower(table_name) = 'wvp_alarm'
+                """, String.class));
+
+        assertTrue(columns.containsAll(Set.of(
+                "id", "channel_id", "description", "snap_path", "record_path",
+                "longitude", "latitude", "alarm_type", "alarm_time")));
+        assertEquals(0, count("select count(*) from wvp_alarm"));
+    }
+
+    @Test
+    void bootstrapAndMigrationScriptsCreateBackingAlarmTable() throws IOException {
+        List<String> schemaFiles = List.of(
+                "docker/mysql/db/wvp.sql",
+                "数据库/2.8.0-h2/h2-schema.sql",
+                "数据库/2.8.0/初始化-mysql-2.8.0.sql",
+                "数据库/2.8.0/更新-mysql-2.8.0.sql",
+                "数据库/2.8.0/初始化-postgresql-2.8.0.sql",
+                "数据库/2.8.0/更新-postgresql-2.8.0.sql",
+                "数据库/2.8.0/初始化-kingbase-2.8.0.sql",
+                "数据库/2.8.0/更新-kingbase-2.8.0.sql");
+
+        for (String schemaFile : schemaFiles) {
+            String sql = Files.readString(Path.of(schemaFile)).toLowerCase();
+            assertTrue(sql.contains("create table") && sql.contains("wvp_alarm"), schemaFile);
+            assertTrue(sql.contains("channel_id") && sql.contains("alarm_time"), schemaFile);
+        }
     }
 
     @Test
@@ -313,13 +363,21 @@ class MigrationContractTest {
                 String schemaFile = "数据库/2.8.0/" + phase + "-" + dialect + "-2.8.0.sql";
                 String sql = Files.readString(Path.of(schemaFile)).toLowerCase();
 
-                assertTrue(sql.contains("'systemrole', 'role', 'system/role/index'"), schemaFile);
+                assertTrue(sql.contains("'systemrole', 'role', 'system/role/index', 'group'"), schemaFile);
                 assertTrue(sql.contains("'systemdept', 'dept', 'system/dept/index'"), schemaFile);
-                assertTrue(sql.contains("'systemmenu', 'menu', 'system/menu/index'"), schemaFile);
+                assertTrue(sql.contains("'systemmenu', 'menu', 'system/menu/index', 'table'"), schemaFile);
+                assertFalse(sql.contains("'system/role/index', 'peoples'"), schemaFile);
+                assertFalse(sql.contains("'system/menu/index', 'tree-table'"), schemaFile);
                 assertTrue(sql.contains(
                         "'system/api-key/index', 'key', 5, 0, 1, 0, 0, 1"), schemaFile);
                 assertTrue(sql.contains(
                         "'system/resource-group/index', 'nested', 6, 0, 0, 0, 0, 1"), schemaFile);
+                assertTrue(sql.contains(
+                        "status = case when id in (150, 330, 340, 430, 440) then 1 else status end"),
+                        schemaFile);
+                assertFalse(sql.contains(
+                        "status = case when id in (120, 130, 140, 150, 160"),
+                        schemaFile);
             }
         }
     }

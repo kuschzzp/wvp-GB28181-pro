@@ -1,6 +1,7 @@
 package com.genersoft.iot.vmp.media.security;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
 import java.time.Instant;
 import java.time.Duration;
@@ -49,6 +50,7 @@ public record MediaAccessProperties(
                 Map.of());
     }
 
+    @ConstructorBinding
     public MediaAccessProperties {
         legacyResponseSunset = legacyResponseSunset == null
                 ? DEFAULT_SUNSET

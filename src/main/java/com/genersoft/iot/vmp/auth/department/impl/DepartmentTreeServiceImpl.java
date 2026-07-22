@@ -11,6 +11,8 @@ import com.genersoft.iot.vmp.auth.department.model.Department;
 import com.genersoft.iot.vmp.auth.department.model.DepartmentClosurePath;
 import com.genersoft.iot.vmp.auth.department.model.DepartmentScope;
 import com.genersoft.iot.vmp.auth.model.AuthPrincipal;
+import com.genersoft.iot.vmp.conf.exception.BusinessException;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -237,10 +239,10 @@ public class DepartmentTreeServiceImpl implements DepartmentTreeService {
             throw new AccessDeniedException("不能删除本人的主部门");
         }
         if (mapper.countDirectChildren(deptId) > 0) {
-            throw new IllegalStateException("部门存在子部门，不能删除");
+            throw new BusinessException("部门存在子部门，不能删除", HttpStatus.CONFLICT);
         }
         if (mapper.countUsers(deptId) > 0) {
-            throw new IllegalStateException("部门存在用户，不能删除");
+            throw new BusinessException("部门存在用户，不能删除", HttpStatus.CONFLICT);
         }
         if (mapper.deleteById(deptId) != 1) {
             throw new IllegalStateException("部门删除失败");

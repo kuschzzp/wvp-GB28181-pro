@@ -6,6 +6,7 @@ import com.genersoft.iot.vmp.auth.department.impl.DepartmentTreeServiceImpl;
 import com.genersoft.iot.vmp.auth.department.model.DepartmentScope;
 import com.genersoft.iot.vmp.auth.model.AuthPrincipal;
 import com.genersoft.iot.vmp.auth.model.PrincipalType;
+import com.genersoft.iot.vmp.conf.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.boot.test.autoconfigure.MybatisTest;
@@ -103,8 +104,9 @@ class DepartmentTreeServiceTest {
         long parent = create(1L, "业务部", "BIZ");
         long child = create(parent, "业务一组", "BIZ-1");
 
-        assertThrows(IllegalStateException.class,
+        BusinessException childException = assertThrows(BusinessException.class,
                 () -> service.delete(parent, operator()));
+        assertEquals("部门存在子部门，不能删除", childException.getMessage());
         assertThrows(IllegalArgumentException.class,
                 () -> service.delete(1L, operator()));
 
@@ -114,8 +116,9 @@ class DepartmentTreeServiceTest {
                      token_version, password_version)
                 values ('dept_user', 'password', 99, ?, '部门用户', 0, 0, 0, 0, 1)
                 """, child);
-        assertThrows(IllegalStateException.class,
+        BusinessException userException = assertThrows(BusinessException.class,
                 () -> service.delete(child, operator()));
+        assertEquals("部门存在用户，不能删除", userException.getMessage());
 
         long leaf = create(1L, "空部门", "EMPTY");
         service.delete(leaf, operator());

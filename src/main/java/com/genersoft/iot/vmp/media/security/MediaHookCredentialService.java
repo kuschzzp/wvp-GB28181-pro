@@ -3,6 +3,7 @@ package com.genersoft.iot.vmp.media.security;
 import com.genersoft.iot.vmp.media.bean.MediaServer;
 import com.genersoft.iot.vmp.storager.dao.MediaServerMapper;
 import com.genersoft.iot.vmp.utils.DateUtil;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +25,7 @@ public class MediaHookCredentialService {
     private final MediaHookSecretHasher secretHasher;
     private final Clock clock;
 
+    @Autowired
     public MediaHookCredentialService(
             MediaServerMapper mediaServerMapper,
             MediaHookSecretHasher secretHasher) {

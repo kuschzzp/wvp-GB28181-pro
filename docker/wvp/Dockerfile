@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM ringcentral/jdk:21.0.9 AS builder
 
 EXPOSE 18978/tcp
@@ -52,9 +53,15 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 
-COPY . /build
 WORKDIR /build
-RUN ls && mvn clean package -Dmaven.test.skip=true
+COPY pom.xml /build/pom.xml
+RUN --mount=type=cache,id=wvp-m2,target=/root/.m2 \
+    mvn -B -ntp -Dmaven.test.skip=true dependency:go-offline
+
+COPY src /build/src
+COPY .git /build/.git
+RUN --mount=type=cache,id=wvp-m2,target=/root/.m2 \
+    mvn -B -ntp clean package -Dmaven.test.skip=true
 WORKDIR /build/target
 #ȷ���ļ���һ��
 RUN mv wvp-pro-*.jar wvp.jar

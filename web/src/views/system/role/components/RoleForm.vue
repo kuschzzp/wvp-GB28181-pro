@@ -68,7 +68,6 @@
             :data="menuOptions"
             node-key="id"
             show-checkbox
-            check-strictly
             :default-expand-all="menuExpanded"
             :filter-node-method="filterMenuNode"
             :props="menuTreeProps"
@@ -339,7 +338,9 @@ export default {
       this.visible = true
       this.$nextTick(() => {
         if (this.$refs.form) this.$refs.form.clearValidate()
-        if (this.$refs.menuTree) this.$refs.menuTree.setCheckedKeys(this.form.menuIds)
+        if (this.$refs.menuTree) {
+          this.$refs.menuTree.setCheckedKeys(this.getMenuTreeEchoKeys(this.form.menuIds), true)
+        }
         if (this.$refs.departmentTree) this.$refs.departmentTree.setCheckedKeys(this.form.deptIds)
         if (this.form.videoScopeType === 'CUSTOM' && this.canViewVideoResourceGroups) {
           this.ensureResourceGroups()
@@ -347,9 +348,7 @@ export default {
       })
     },
     buildPayload() {
-      const menuIds = this.$refs.menuTree
-        ? this.$refs.menuTree.getCheckedKeys()
-        : this.form.menuIds
+      const menuIds = this.getMenuTreeSubmitKeys()
       const deptIds = this.form.deptDataScope === 'CUSTOM'
         ? (this.$refs.departmentTree
             ? this.$refs.departmentTree.getCheckedKeys()
@@ -384,6 +383,34 @@ export default {
         payload.systemRole = this.form.systemRole
       }
       return payload
+    },
+    getMenuTreeEchoKeys(menuIds = []) {
+      const selectedIds = new Set(Array.isArray(menuIds) ? menuIds : [])
+      const checkedLeafIds = []
+      const collectLeafIds = nodes => {
+        const list = Array.isArray(nodes) ? nodes : []
+        list.forEach(node => {
+          const children = Array.isArray(node.children) ? node.children : []
+          if (children.length === 0) {
+            if (selectedIds.has(node.id)) checkedLeafIds.push(node.id)
+            return
+          }
+          collectLeafIds(children)
+        })
+      }
+      collectLeafIds(this.menuOptions)
+      return checkedLeafIds
+    },
+    getMenuTreeSubmitKeys() {
+      if (!this.$refs.menuTree) return this.form.menuIds
+      const checkedKeys = this.$refs.menuTree.getCheckedKeys()
+      const halfCheckedKeys = typeof this.$refs.menuTree.getHalfCheckedKeys === 'function'
+        ? this.$refs.menuTree.getHalfCheckedKeys()
+        : []
+      return [
+        ...(Array.isArray(checkedKeys) ? checkedKeys : []),
+        ...(Array.isArray(halfCheckedKeys) ? halfCheckedKeys : [])
+      ]
     },
     submit() {
       this.$refs.form.validate(valid => {

@@ -4,6 +4,7 @@ import com.genersoft.iot.vmp.auth.security.SecurityError;
 import com.genersoft.iot.vmp.auth.security.RequestIdResolver;
 import com.genersoft.iot.vmp.authorization.video.resolver.AmbiguousVideoResourceException;
 import com.genersoft.iot.vmp.authorization.video.resolver.VideoResourceNotFoundException;
+import com.genersoft.iot.vmp.conf.exception.BusinessException;
 import com.genersoft.iot.vmp.conf.exception.ControllerException;
 import com.genersoft.iot.vmp.media.security.StreamShareAccessException;
 import com.genersoft.iot.vmp.media.security.DownloadTicketException;
@@ -28,9 +29,14 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import java.util.Objects;
+import java.util.regex.Pattern;
+
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Pattern USER_FACING_MESSAGE = Pattern.compile(".*[\\u4e00-\\u9fa5].*");
 
     @ExceptionHandler(DownloadTicketException.class)
     public ResponseEntity<WVPResult<String>> handleDownloadTicket(
@@ -120,11 +126,26 @@ public class GlobalExceptionHandler {
             HandlerMethodValidationException.class,
             MethodArgumentTypeMismatchException.class,
             HttpMessageNotReadableException.class,
-            MissingServletRequestParameterException.class,
-            IllegalArgumentException.class
+            MissingServletRequestParameterException.class
     })
     public ResponseEntity<WVPResult<String>> handleBadRequest(Exception exception) {
-        return ResponseEntity.badRequest().body(WVPResult.fail(ErrorCode.ERROR400));
+        return ResponseEntity.badRequest().body(WVPResult.fail(
+                ErrorCode.ERROR400.getCode(),
+                badRequestMessage(exception)));
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<WVPResult<String>> handleIllegalArgument(IllegalArgumentException exception) {
+        return ResponseEntity.badRequest().body(WVPResult.fail(
+                ErrorCode.ERROR400.getCode(),
+                safeClientMessage(exception, ErrorCode.ERROR400.getMsg())));
+    }
+
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<WVPResult<String>> handleBusinessException(BusinessException exception) {
+        return ResponseEntity.status(exception.getStatus())
+                .body(WVPResult.fail(exception.getCode(), safeClientMessage(
+                        exception, ErrorCode.ERROR100.getMsg())));
     }
 
     @ExceptionHandler(ControllerException.class)
@@ -144,5 +165,46 @@ public class GlobalExceptionHandler {
         log.error("[全局异常]", exception);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(WVPResult.fail(ErrorCode.ERROR500));
+    }
+
+    private String badRequestMessage(Exception exception) {
+        if (exception instanceof MethodArgumentNotValidException validationException) {
+            return validationException.getBindingResult().getAllErrors()
+                    .stream()
+                    .map(error -> safeClientMessage(error.getDefaultMessage()))
+                    .filter(Objects::nonNull)
+                    .findFirst()
+                    .orElse(ErrorCode.ERROR400.getMsg());
+        }
+        if (exception instanceof HandlerMethodValidationException validationException) {
+            return validationException.getAllErrors()
+                    .stream()
+                    .map(error -> safeClientMessage(error.getDefaultMessage()))
+                    .filter(Objects::nonNull)
+                    .findFirst()
+                    .orElse(ErrorCode.ERROR400.getMsg());
+        }
+        if (exception instanceof MethodArgumentTypeMismatchException typeMismatchException) {
+            return "参数类型错误：" + typeMismatchException.getName();
+        }
+        if (exception instanceof MissingServletRequestParameterException missingParameterException) {
+            return "缺少必要参数：" + missingParameterException.getParameterName();
+        }
+        if (exception instanceof HttpMessageNotReadableException) {
+            return "请求内容格式错误";
+        }
+        return ErrorCode.ERROR400.getMsg();
+    }
+
+    private String safeClientMessage(Throwable throwable, String fallback) {
+        return Objects.requireNonNullElse(safeClientMessage(throwable.getMessage()), fallback);
+    }
+
+    private String safeClientMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return null;
+        }
+        String trimmed = message.trim();
+        return USER_FACING_MESSAGE.matcher(trimmed).matches() ? trimmed : null;
     }
 }

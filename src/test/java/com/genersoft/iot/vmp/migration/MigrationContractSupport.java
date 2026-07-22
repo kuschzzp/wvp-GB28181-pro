@@ -222,6 +222,7 @@ final class MigrationContractSupport {
         verifyClosuresAndRootScopes(connection);
         verifyApiKeyHashAndScopes(connection, upgraded);
         verifyCloudRecordSource(connection);
+        verifyAlarmSchema(connection);
         verifyGeneratedIdentifiers(connection);
         verifyResourceUniqueness(connection);
         verifyIndexes(connection);
@@ -250,6 +251,7 @@ final class MigrationContractSupport {
         assertEquals("TABLE", relationKind(connection, "wvp_user_role"));
         assertEquals("VIEW", relationKind(connection, "wvp_user_role_rel"));
         assertEquals(null, relationKind(connection, "wvp_user_role_legacy_contract"));
+        verifyAlarmSchema(connection);
         assertEquals(
                 scalarLong(connection, "select count(*) from wvp_user_role"),
                 scalarLong(connection, "select count(*) from wvp_user_role_rel"));
@@ -456,6 +458,17 @@ final class MigrationContractSupport {
                 select count(*) from wvp_cloud_record
                  where channel_id is null and source_type <> 'LEGACY_UNBOUND'
                 """));
+    }
+
+    private static void verifyAlarmSchema(Connection connection) throws SQLException {
+        assertEquals("TABLE", relationKind(connection, "wvp_alarm"),
+                "告警菜单发布时必须有 wvp_alarm 表支撑列表查询");
+        for (String column : List.of(
+                "id", "channel_id", "description", "snap_path", "record_path",
+                "longitude", "latitude", "alarm_type", "alarm_time")) {
+            assertTrue(hasColumn(connection, "wvp_alarm", column),
+                    "wvp_alarm 缺少字段 " + column);
+        }
     }
 
     private static void verifyGeneratedIdentifiers(Connection connection) throws SQLException {

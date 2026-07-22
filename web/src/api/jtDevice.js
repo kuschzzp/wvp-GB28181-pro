@@ -2,10 +2,11 @@ import request from '@/utils/request'
 
 // 部标设备API
 
-export function queryDevices({ page, count, query, online }) {
+export function queryDevices({ page, count, query, online, suppressGlobalError = false } = {}) {
   return request({
     method: 'get',
     url: '/api/jt1078/terminal/list',
+    suppressGlobalError,
     params: {
       page: page,
       count: count,
@@ -15,10 +16,15 @@ export function queryDevices({ page, count, query, online }) {
   })
 }
 
-export function queryDeviceById(deviceId) {
+export function queryDeviceById(params) {
+  const deviceId = params && typeof params === 'object' ? params.deviceId : params
+  const suppressGlobalError = params && typeof params === 'object'
+    ? Boolean(params.suppressGlobalError)
+    : false
   return request({
     method: 'get',
     url: '/api/jt1078/terminal/query',
+    suppressGlobalError,
     params: {
       deviceId: deviceId
     }
@@ -51,11 +57,12 @@ export function deleteDevice(phoneNumber) {
   })
 }
 
-export function queryChannels(params) {
-  const { page, count, query, deviceId } = params
+export function queryChannels(params = {}) {
+  const { page, count, query, deviceId, suppressGlobalError = false } = params
   return request({
     method: 'get',
     url: '/api/jt1078/terminal/channel/list',
+    suppressGlobalError,
     params: {
       page: page,
       count: count,
@@ -307,7 +314,7 @@ export function connection(data) {
     data: data
   })
 }
-export function controlDoor({ phoneNumber, open}) {
+export function controlDoor({ phoneNumber, open }) {
   return request({
     method: 'get',
     url: '/api/jt1078/control/door',
@@ -367,5 +374,3 @@ export function stopTalk({ phoneNumber, channelId }) {
     }
   })
 }
-
-

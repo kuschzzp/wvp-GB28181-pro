@@ -27,6 +27,7 @@
           <el-table
             ref="channelListTable"
             :data="deviceChannelList"
+            :empty-text="tableEmptyText"
             :height="winHeight"
             style="width: 100%"
             header-row-class-name="table-header"
@@ -152,6 +153,25 @@ import SecuredImage from '@/components/SecuredImage'
 import { issueJtSnapshotTicket } from '@/api/mediaAccess'
 import { downloadTicketAsFile } from '@/utils/downloadTicket'
 
+const JT1078_EMPTY_TEXT = 'JT1078 服务未启用或暂无资源'
+
+function isJt1078EndpointUnavailable(error) {
+  const responseStatus = error && error.response && error.response.status
+  return Number(error && error.status) === 404 ||
+    Number(error && error.code) === 404 ||
+    Number(responseStatus) === 404
+}
+
+function requestErrorMessage(error, fallback) {
+  if (!error) return fallback
+  if (typeof error === 'string') return error
+  const data = error.response && error.response.data
+  return (data && (data.msg || data.message)) ||
+    error.msg ||
+    error.message ||
+    fallback
+}
+
 export default {
   name: 'ChannelList',
   components: {
@@ -179,7 +199,13 @@ export default {
       total: 0,
       beforeUrl: '/jtDeviceList',
       isLoging: false,
-      jtChannel: null
+      jtChannel: null,
+      jt1078Unavailable: false
+    }
+  },
+  computed: {
+    tableEmptyText() {
+      return this.jt1078Unavailable ? JT1078_EMPTY_TEXT : '暂无数据'
     }
   },
 
@@ -189,21 +215,30 @@ export default {
   },
   destroyed() {
     this.$destroy('videojs')
-    clearTimeout(this.updateLooper)
+    this.stopAutoRefresh()
   },
   methods: {
     initData: function() {
+      this.jt1078Unavailable = false
       this.getDeviceChannelList()
     },
     initParam: function() {
       this.currentPage = 1
       this.count = 15
-      this.$store.dispatch('jtDevice/queryDeviceById', this.deviceId)
+      this.$store.dispatch('jtDevice/queryDeviceById', {
+        deviceId: this.deviceId,
+        suppressGlobalError: true
+      })
         .then(data => {
+          this.jt1078Unavailable = false
           this.device = data
         })
         .catch(err => {
-          console.error(err)
+          if (isJt1078EndpointUnavailable(err)) {
+            this.markJt1078Unavailable()
+            return
+          }
+          this.$message.error(requestErrorMessage(err, '获取 JT1078 终端失败'))
         })
     },
     currentChange: function(val) {
@@ -214,21 +249,42 @@ export default {
       this.count = val
       this.getDeviceChannelList()
     },
+    stopAutoRefresh: function() {
+      if (!this.updateLooper) return
+      clearInterval(this.updateLooper)
+      this.updateLooper = 0
+    },
+    markJt1078Unavailable: function() {
+      this.device = null
+      this.deviceChannelList = []
+      this.total = 0
+      this.jt1078Unavailable = true
+      this.stopAutoRefresh()
+    },
     getDeviceChannelList: function() {
       if (typeof (this.deviceId) === 'undefined') return
-      this.$store.dispatch('jtDevice/queryChannels', {
+      return this.$store.dispatch('jtDevice/queryChannels', {
         page: this.currentPage,
         count: this.count,
         query: this.searchSrt,
-        deviceId: this.deviceId
+        deviceId: this.deviceId,
+        suppressGlobalError: true
       })
         .then(data => {
+          this.jt1078Unavailable = false
           this.total = data.total
           this.deviceChannelList = data.list
           // 防止出现表格错位
           this.$nextTick(() => {
             this.$refs.channelListTable.doLayout()
           })
+        })
+        .catch(error => {
+          if (isJt1078EndpointUnavailable(error)) {
+            this.markJt1078Unavailable()
+            return
+          }
+          this.$message.error(requestErrorMessage(error, '获取 JT1078 通道失败'))
         })
     },
 
@@ -324,6 +380,7 @@ export default {
         })
     },
     refresh: function() {
+      this.jt1078Unavailable = false
       this.initData()
     },
     add: function() {

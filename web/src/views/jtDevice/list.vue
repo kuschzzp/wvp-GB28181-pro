@@ -33,7 +33,7 @@
           icon="el-icon-refresh-right"
           circle
           :loading="getListLoading"
-          @click="getList()"
+          @click="refreshList"
         />
       </el-form-item>
     </el-form>
@@ -41,6 +41,7 @@
     <el-table
       size="small"
       :data="deviceList"
+      :empty-text="tableEmptyText"
       height="calc(100% - 64px)"
       header-row-class-name="table-header"
     >
@@ -192,6 +193,25 @@ import phoneBook from './dialog/phoneBook.vue'
 import queryMediaList from './dialog/queryMediaListDialog.vue'
 import shootingNow from './dialog/shootingNow.vue'
 
+const JT1078_EMPTY_TEXT = 'JT1078 服务未启用或暂无资源'
+
+function isJt1078EndpointUnavailable(error) {
+  const responseStatus = error && error.response && error.response.status
+  return Number(error && error.status) === 404 ||
+    Number(error && error.code) === 404 ||
+    Number(responseStatus) === 404
+}
+
+function requestErrorMessage(error, fallback) {
+  if (!error) return fallback
+  if (typeof error === 'string') return error
+  const data = error.response && error.response.data
+  return (data && (data.msg || data.message)) ||
+    error.msg ||
+    error.message ||
+    fallback
+}
+
 export default {
   name: 'App',
   components: {
@@ -208,21 +228,28 @@ export default {
       currentPage: 1,
       count: 15,
       total: 0,
-      getListLoading: false
+      getListLoading: false,
+      jt1078Unavailable: false
+    }
+  },
+  computed: {
+    tableEmptyText() {
+      return this.jt1078Unavailable ? JT1078_EMPTY_TEXT : '暂无数据'
     }
   },
   mounted() {
     this.initData()
-    this.updateLooper = setInterval(this.getList, 10000)
+    this.startAutoRefresh()
   },
   destroyed() {
     this.$destroy('videojs')
-    clearTimeout(this.updateLooper)
+    this.stopAutoRefresh()
   },
   methods: {
     initData: function() {
       this.currentPage = 1
       this.total = 0
+      this.jt1078Unavailable = false
       this.getList()
     },
     currentChange: function(val) {
@@ -233,17 +260,45 @@ export default {
       this.count = val
       this.getList()
     },
+    startAutoRefresh: function() {
+      this.stopAutoRefresh()
+      this.updateLooper = setInterval(this.getList, 10000)
+    },
+    stopAutoRefresh: function() {
+      if (!this.updateLooper) return
+      clearInterval(this.updateLooper)
+      this.updateLooper = 0
+    },
+    refreshList: function() {
+      this.jt1078Unavailable = false
+      this.getList()
+    },
+    markJt1078Unavailable: function() {
+      this.deviceList = []
+      this.total = 0
+      this.jt1078Unavailable = true
+      this.stopAutoRefresh()
+    },
     getList: function() {
       this.getListLoading = true
-      this.$store.dispatch('jtDevice/queryDevices', {
+      return this.$store.dispatch('jtDevice/queryDevices', {
         page: this.currentPage,
         count: this.count,
         query: this.searchStr,
-        online: this.online
+        online: this.online,
+        suppressGlobalError: true
       })
         .then(data => {
+          this.jt1078Unavailable = false
           this.total = data.total
           this.deviceList = data.list
+        })
+        .catch(error => {
+          if (isJt1078EndpointUnavailable(error)) {
+            this.markJt1078Unavailable()
+            return
+          }
+          this.$message.error(requestErrorMessage(error, '获取 JT1078 终端失败'))
         })
         .finally(() => {
           this.getListLoading = false

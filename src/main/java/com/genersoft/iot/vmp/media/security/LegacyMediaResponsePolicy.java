@@ -11,6 +11,7 @@ import com.genersoft.iot.vmp.authorization.video.model.VideoResourceType;
 import com.genersoft.iot.vmp.common.StreamInfo;
 import com.genersoft.iot.vmp.media.security.dto.LegacyMediaResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -31,6 +32,7 @@ public class LegacyMediaResponsePolicy {
     private final AuthorizationAuditSink auditSink;
     private final Clock clock;
 
+    @Autowired
     public LegacyMediaResponsePolicy(
             AuthorizationProperties authorizationProperties,
             MediaAccessProperties mediaAccessProperties,

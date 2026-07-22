@@ -30,6 +30,7 @@ import {
 } from '@/api/user'
 import userModule from '@/store/modules/user'
 import {
+  canAccessRoutePath,
   createPermissionGuard,
   createRouteLoader
 } from '@/utils/permission-guard'
@@ -102,6 +103,65 @@ describe('permission guard', () => {
 
     expect(routeLoader).toHaveBeenCalledTimes(1)
     expect(next).toHaveBeenCalledWith({ ...to, replace: true })
+  })
+
+  it('能识别授权路由路径，包含嵌套和动态参数路径', () => {
+    const routes = [{
+      path: '/',
+      redirect: '/system/user',
+      hidden: true
+    }, {
+      path: '/system',
+      children: [{
+        path: 'user',
+        name: 'SystemUser'
+      }]
+    }, {
+      path: '/device',
+      hidden: true,
+      children: [{
+        path: 'record/:deviceId/:channelDeviceId',
+        name: 'DeviceRecord'
+      }]
+    }, {
+      path: '*',
+      redirect: '/404',
+      hidden: true
+    }]
+
+    expect(canAccessRoutePath(routes, '/system/user')).toBe(true)
+    expect(canAccessRoutePath(routes, '/device/record/34020000001320000001/34020000001320000002')).toBe(true)
+    expect(canAccessRoutePath(routes, '/dashboard')).toBe(false)
+  })
+
+  it('首次安装动态路由后，旧 redirect 不在授权菜单内时回到授权首页', async() => {
+    const routes = [{
+      path: '/',
+      redirect: '/system/user',
+      hidden: true
+    }, {
+      path: '/system',
+      children: [{
+        path: 'user',
+        name: 'SystemUser'
+      }]
+    }, {
+      path: '*',
+      redirect: '/404',
+      hidden: true
+    }]
+    const routeLoader = jest.fn(() => Promise.resolve({ installed: true, routes }))
+    const store = { dispatch: jest.fn(), getters: {} }
+    const guard = createPermissionGuard({
+      store,
+      tokenProvider: () => 'signed-token',
+      routeLoader
+    })
+    const next = jest.fn()
+
+    await guard({ path: '/dashboard', fullPath: '/dashboard', meta: {} }, {}, next)
+
+    expect(next).toHaveBeenCalledWith({ path: '/', replace: true })
   })
 
   it('动态路由接口返回 403 时进入无权限页但不清除登录态', async() => {

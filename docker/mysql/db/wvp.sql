@@ -384,6 +384,20 @@ create table IF NOT EXISTS wvp_cloud_record
     time_len        bigint
 );
 
+drop table IF EXISTS wvp_alarm;
+create table IF NOT EXISTS wvp_alarm
+(
+    id          serial primary key,
+    channel_id  integer,
+    description character varying(255),
+    snap_path   character varying(255),
+    record_path character varying(255),
+    longitude   double precision,
+    latitude    double precision,
+    alarm_type  integer,
+    alarm_time  bigint
+);
+
 drop table IF EXISTS wvp_user;
 create table IF NOT EXISTS wvp_user
 (

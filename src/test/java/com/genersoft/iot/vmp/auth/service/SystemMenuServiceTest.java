@@ -5,6 +5,7 @@ import com.genersoft.iot.vmp.auth.menu.MenuComponentRegistry;
 import com.genersoft.iot.vmp.auth.menu.impl.SystemMenuServiceImpl;
 import com.genersoft.iot.vmp.auth.model.AuthPrincipal;
 import com.genersoft.iot.vmp.auth.model.PrincipalType;
+import com.genersoft.iot.vmp.conf.exception.BusinessException;
 import com.genersoft.iot.vmp.storager.dao.MenuMapper;
 import com.genersoft.iot.vmp.storager.dao.dto.Menu;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +19,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -91,6 +93,21 @@ class SystemMenuServiceTest {
 
         verify(menuMapper).deleteRoleMenusByMenuId(7L);
         verify(tokenVersionService).bumpUsers(List.of(21L, 22L), "MENU_DELETED");
+    }
+
+    @Test
+    void deletingMenuWithChildrenRaisesBusinessConflict() {
+        when(currentPrincipalService.requireCurrent()).thenReturn(principal(false));
+        when(menuMapper.findByIdForUpdate(7L)).thenReturn(menu(7L, 0L, "M", false));
+        when(menuMapper.countChildren(7L)).thenReturn(1);
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.delete(7L));
+
+        assertEquals("菜单存在子菜单，不能删除", exception.getMessage());
+        verify(menuMapper, never()).deleteRoleMenusByMenuId(7L);
+        verify(menuMapper, never()).deleteById(7L);
+        verify(tokenVersionService, never()).bumpUsers(any(), any());
     }
 
     @Test
