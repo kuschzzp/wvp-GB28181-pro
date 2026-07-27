@@ -15,6 +15,8 @@ import org.springframework.stereotype.Component;
 import javax.sip.*;
 import javax.sip.header.CSeqHeader;
 import javax.sip.header.CallIdHeader;
+import javax.sip.message.MessageFactory;
+import javax.sip.message.Request;
 import javax.sip.message.Response;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -72,10 +74,31 @@ public class SIPProcessorObserver implements ISIPProcessorObserver {
                     requestProcessorMap.get(method);
             if (sipRequestProcessor == null) {
                 log.warn("不支持方法{}的request", method);
-                // TODO 回复错误码
+                replyNotImplemented(requestEvent);
                 return;
             }
             sipRequestProcessor.process(requestEvent);
+        }
+    }
+
+    private void replyNotImplemented(RequestEvent requestEvent) {
+        try {
+            MessageFactory messageFactory =
+                    SipFactory.getInstance().createMessageFactory();
+            Response response = messageFactory.createResponse(
+                    Response.NOT_IMPLEMENTED,
+                    (Request) requestEvent.getRequest());
+            ServerTransaction transaction =
+                    requestEvent.getServerTransaction();
+            if (transaction != null) {
+                transaction.sendResponse(response);
+            } else if (requestEvent.getSource() instanceof SipProvider sipProvider) {
+                sipProvider.sendResponse(response);
+            } else {
+                log.warn("无法获取SipProvider，未回复不支持的SIP请求");
+            }
+        } catch (Exception e) {
+            log.warn("回复不支持的SIP请求失败", e);
         }
     }
 

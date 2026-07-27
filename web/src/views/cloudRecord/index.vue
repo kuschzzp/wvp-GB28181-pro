@@ -298,7 +298,9 @@ export default {
       }
       this.$store.dispatch('cloudRecord/getZipDownloadTicket', ids)
         .then(ticket => openDownloadTicket(ticket))
-        .catch(error => console.log(error))
+        .catch(error => {
+          this.$message({ showClose: true, message: error.message || error, type: 'error' })
+        })
     },
     deleteOneRecord(row) {
       if (!this.$auth.hasPermi(['video:cloud-record:remove'])) return

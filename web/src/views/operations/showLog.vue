@@ -103,7 +103,6 @@ export default {
         }
         websocket.onerror = e => {
           if (sequence === this.connectionSequence) this.loading = false
-          console.log('conn err')
           console.error(e)
         }
         websocket.onopen = () => {

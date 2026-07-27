@@ -116,6 +116,7 @@ create table IF NOT EXISTS wvp_device_channel
     gps_time                     character varying(50),
     stream_identification        character varying(50),
     channel_type                 int  default 0        not null,
+    map_level                    int  default 0,
     gb_device_id                 character varying(50),
     gb_name                      character varying(255),
     gb_manufacturer              character varying(255),

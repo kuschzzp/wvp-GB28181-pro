@@ -246,7 +246,6 @@ export default {
       })
 
       this.broadcastRtc.on(ZLMRTCClient.Events.WEBRTC_ON_CONNECTION_STATE_CHANGE, (e) => {
-        console.log('状态改变', e)
         if (e === 'connecting') {
           this.broadcastStatus = 0
         } else if (e === 'connected') {
@@ -257,7 +256,6 @@ export default {
       })
 
       this.broadcastRtc.on(ZLMRTCClient.Events.CAPTURE_STREAM_FAILED, (e) => {
-        console.log('捕获流失败', e)
         this.$message({ showClose: true, message: '捕获流失败' + e, type: 'error' })
         this.broadcastStatus = -1
       })
