@@ -64,12 +64,12 @@
           </div>
           <player-tabs
             ref="recordVideoPlayer"
-            style="height: calc(100vh - 220px)"
             :show-button="false"
             :show-tab="false"
-            :has-audio="true"
+            :has-audio="hasAudio"
             @playStatusChange="playingChange"
             @playTimeChange="showPlayTimeChange"
+            @player-changed="onPlayerChanged"
           />
         </div>
         <div :class="{
@@ -188,18 +188,18 @@
             </div>
             <div style="text-align: right;">
               <div class="record-play-control" style="background-color: transparent; box-shadow: 0 0 10px transparent">
-                <el-dropdown @command="changePlayer" placement="top">
+                <div class="record-play-control-item record-play-control-player">
+                <el-dropdown @command="changePlayerType" placement="top" :popper-append-to-body="false">
                   <a
                     target="_blank"
                     class="record-play-control-item record-play-control-speed"
-                    title="切换播放器"
+                    title="选择播放器"
                   >{{ playerLabel }}</a>
                   <el-dropdown-menu slot="dropdown" :append-to-body="false">
-                    <el-dropdown-item command="jessibuca">Jessibuca</el-dropdown-item>
-                    <el-dropdown-item command="webRTC">WebRTC</el-dropdown-item>
-                    <el-dropdown-item command="h265web">H265Web</el-dropdown-item>
+                    <el-dropdown-item v-for="p in playerList" :key="p.key" :command="p.key">{{ p.label }}</el-dropdown-item>
                   </el-dropdown-menu>
                 </el-dropdown>
+              </div>
                 <a
                   v-if="!isFullScreen"
                   target="_blank"
@@ -278,7 +278,9 @@ export default {
       timelineControl: false,
       showOtherSpeed: true,
       timeSegments: [],
-      activePlayer: 'jessibuca',
+      hasAudio: true,
+      playerList: [],
+      playerLabel: 'Jessibuca',
       pickerOptions: {
         cellClassName: (date) => {
           // 通过显示一个点标识这一天有录像
@@ -294,10 +296,6 @@ export default {
     }
   },
   computed: {
-    playerLabel() {
-      const labels = { jessibuca: 'Jessibuca', webRTC: 'WebRTC', h265web: 'H265Web' }
-      return labels[this.activePlayer] || 'Jessibuca'
-    },
     boxStyle() {
       if (this.showSidebar) {
         return {
@@ -326,17 +324,32 @@ export default {
     this.dateChange()
     this.getDownloadSpeedArray()
     window.addEventListener('beforeunload', this.stopPlayRecord)
+    this.$nextTick(() => {
+      this.updatePlayerList()
+    })
   },
   destroyed() {
     this.$destroy('recordVideoPlayer')
     window.removeEventListener('beforeunload', this.stopPlayRecord)
   },
   methods: {
-    changePlayer(player) {
-      if (this.activePlayer === player) return
-      this.activePlayer = player
-      if (this.streamInfo) {
-        this.$refs.recordVideoPlayer && this.$refs.recordVideoPlayer.switchPlayer(player)
+    updatePlayerList() {
+      if (this.$refs.recordVideoPlayer) {
+        this.playerList = this.$refs.recordVideoPlayer.getPlayerList()
+        const active = this.$refs.recordVideoPlayer.getActivePlayer()
+        const p = this.playerList.find(item => item.key === active)
+        this.playerLabel = p ? p.label : 'Jessibuca'
+      }
+    },
+    onPlayerChanged(key) {
+      const p = this.playerList.find(item => item.key === key)
+      this.playerLabel = p ? p.label : 'Jessibuca'
+    },
+    changePlayerType(playerType) {
+      if (this.$refs.recordVideoPlayer) {
+        this.$refs.recordVideoPlayer.switchPlayer(playerType)
+        const p = this.playerList.find(item => item.key === playerType)
+        this.playerLabel = p ? p.label : 'Jessibuca'
       }
     },
     sidebarControl() {
@@ -412,28 +425,28 @@ export default {
       this.$refs.recordVideoPlayer.pause()
     },
     play() {
-      if (this.$refs.recordVideoPlayer.isLoaded()) {
-        this.$refs.recordVideoPlayer.unPause()
+      const player = this.$refs.recordVideoPlayer
+      if (player && player.isLoaded()) {
+        player.unPause()
       } else {
         this.playRecord(this.showTimeValue, this.endTime)
       }
     },
     fullScreen() {
-      // 全屏
       if (this.isFullScreen) {
         screenfull.exit()
         this.isFullScreen = false
         return
       }
-      const playerWrapper = this.$refs.recordVideoPlayer.$refs.playerWrapper
+      const playerWrapper = this.$refs.recordVideoPlayer ? this.$refs.recordVideoPlayer.$refs.playerWrapper : null
       const playerWidth = playerWrapper ? playerWrapper.clientWidth : 0
       const playerHeight = playerWrapper ? playerWrapper.clientHeight : 0
       screenfull.request(document.getElementById('playerBox'))
-      screenfull.on('change', (event) => {
-        this.isFullScreen = screenfull.isFullscreen
-        if (this.$refs.recordVideoPlayer && this.$refs.recordVideoPlayer.resize) {
+      screenfull.on('change', () => {
+        if (this.$refs.recordVideoPlayer) {
           this.$refs.recordVideoPlayer.resize(playerWidth, playerHeight)
         }
+        this.isFullScreen = screenfull.isFullscreen
       })
       this.isFullScreen = true
     },
@@ -483,10 +496,12 @@ export default {
     stopPlayRecord(callback) {
       console.log('停止录像回放')
       if (this.streamInfo !== null) {
-        this.$refs['recordVideoPlayer'].pause()
+        if (this.$refs.recordVideoPlayer) {
+          this.$refs.recordVideoPlayer.pause()
+        }
         this.videoUrl = ''
         this.$store.dispatch('playback/stop', [this.deviceId, this.channelId, this.streamInfo.stream])
-          .then((data) => {
+          .then(() => {
             this.streamInfo = null
             if (callback) callback()
           })
@@ -678,8 +693,16 @@ export default {
   width: 100%; aspect-ratio: 16 / 9;
   background-color: #000000;
   height: calc(100vh - 220px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .play-box-fullscreen {
   height: 100vh !important;
+}
+.record-play-control-player {
+  width: fit-content;
+  height: 32px;
+  display: inline-block;
 }
 </style>

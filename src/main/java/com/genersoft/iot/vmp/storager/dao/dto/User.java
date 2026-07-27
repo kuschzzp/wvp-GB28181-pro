@@ -1,6 +1,7 @@
 package com.genersoft.iot.vmp.storager.dao.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.LocalDateTime;
 import java.util.Set;
@@ -9,7 +10,7 @@ public class User {
 
     private long id;
     private String username;
-    @JsonIgnore
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String password;
     private String createTime;
     private String updateTime;

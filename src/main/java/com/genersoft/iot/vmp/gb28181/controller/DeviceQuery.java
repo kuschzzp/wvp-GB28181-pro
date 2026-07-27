@@ -179,6 +179,7 @@ public class DeviceQuery {
 			log.debug("设备通道信息同步API调用，deviceId：" + deviceId);
 		}
 		Device device = deviceService.getDeviceByDeviceId(deviceId);
+		Assert.notNull(device, "设备不存在");
 		if (device.getTransport() == null) {
 			WVPResult<SyncStatus> wvpResult = new WVPResult<>();
 			wvpResult.setCode(ErrorCode.ERROR100.getCode());
@@ -288,6 +289,7 @@ public class DeviceQuery {
 		channelAccessAuthorizer.requireGbDevice(
 				DEVICE_EDIT_PERMISSION, deviceId);
 		Device device = deviceService.getDeviceByDeviceId(deviceId);
+		Assert.notNull(device, "设备不存在");
 		device.setStreamMode(streamMode.toUpperCase());
 		deviceService.updateCustomDevice(device);
 	}
